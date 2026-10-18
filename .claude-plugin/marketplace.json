@@ -1,0 +1,6 @@
+{
+  "name": "superreview",
+  "owner": { "name": "Roberto Caldas" },
+  "description": "Interactive change diagrams of code changes",
+  "plugins": [{ "name": "superreview", "source": "./" }]
+}

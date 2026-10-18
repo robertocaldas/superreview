@@ -1,0 +1,7 @@
+{
+  "name": "superreview",
+  "version": "0.2.0",
+  "description": "Interactive change diagrams of code changes as a self-contained HTML page",
+  "author": { "name": "Roberto Caldas" },
+  "skills": "./skills/"
+}

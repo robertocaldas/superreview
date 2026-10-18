@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Change Diagram</title>
+<style>
+  :root{
+    --bg:#FFFFFF; --panel:#FAFAFA; --line:#E5E7EB; --fg:#111827; --muted:#6B7280;
+    --added:#16A34A; --modified:#B45309; --deleted:#C0C0C0; --unchanged:#111827; --edgemod:#DC2626;
+    --card-bg:#FFFFFF; --card-shadow:0 8px 30px rgba(0,0,0,.16); --link:#2563EB;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0B0F17; --panel:#111827; --line:#1F2937; --fg:#E5E7EB; --muted:#9CA3AF;
+      --card-bg:#111827; --card-shadow:0 8px 30px rgba(0,0,0,.6); --link:#60A5FA;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0B0F17; --panel:#111827; --line:#1F2937; --fg:#E5E7EB; --muted:#9CA3AF;
+    --card-bg:#111827; --card-shadow:0 8px 30px rgba(0,0,0,.6); --link:#60A5FA;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;overflow:hidden}
+  header{padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;flex:0 0 auto}
+  h1{margin:0;font-size:15px;font-weight:650;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:12.5px}
+  .src{color:var(--muted);font-size:11.5px;border:1px solid var(--line);border-radius:7px;
+    padding:3px 9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .nav{font-size:12px;color:var(--link);text-decoration:none;border:1px solid var(--line);
+    padding:3px 9px;border-radius:7px}
+  .nav:hover{border-color:var(--link)}
+  .nav.off{color:var(--muted);border-style:dashed;cursor:default}
+  .pick{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
+  .pick input{accent-color:var(--link);margin:0}
+  .pick select{font:inherit;font-size:12px;color:var(--fg);background:var(--card-bg);
+    border:1px solid var(--line);border-radius:7px;padding:3px 6px}
+  .legend{margin-left:auto;display:flex;gap:13px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .legend .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;opacity:.65;
+    padding-left:8px;border-left:1px solid var(--line)}
+  .sw{width:11px;height:11px;border-radius:3px;border:2px solid}
+  .ln{width:18px;height:0;border-top:3px solid}
+  #stage{position:relative;flex:1 1 auto;overflow:hidden;cursor:grab}
+  #stage.dragging{cursor:grabbing}
+  #stage svg{width:100%;height:100%;display:block}
+  #stage svg .d2-hit{cursor:pointer}
+  #stage svg .dimmed{opacity:.2;transition:opacity .25s}
+
+  .card{padding:11px 13px;border-radius:11px;background:var(--card-bg);
+    border:1px solid var(--line);box-shadow:var(--card-shadow);max-width:380px}
+  .card .bar{height:3px;border-radius:2px;margin-bottom:8px}
+  .card .t{font-weight:650;font-size:12.5px;word-break:break-all}
+  .card a.t{color:var(--link);text-decoration:none}
+  .card a.t:hover{text-decoration:underline}
+  .card .s{font-size:10.5px;color:var(--muted);margin:3px 0 8px;text-transform:uppercase;letter-spacing:.05em}
+  .card .chg{font-size:12.5px}
+  .card .chg .sw{display:inline-block;vertical-align:-1px;margin-right:5px}
+  .card .chg + .chg{border-top:1px solid var(--line);margin-top:9px;padding-top:9px}
+  .card .lno{font:11.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);
+    text-decoration:none;border-bottom:1px dotted var(--muted)}
+  .card a.lno{color:var(--link);border-color:var(--link)}
+  .card .what{margin-top:2px;white-space:pre-wrap}
+  .card .why{margin-top:3px;color:var(--muted)}
+  .card .hunk{margin-top:6px;padding:6px 8px;border-radius:6px;background:var(--panel);
+    border:1px solid var(--line);overflow-x:auto;
+    font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;tab-size:2}
+  .card .hunk .a{color:#16A34A}
+  .card .hunk .d{color:#DC2626}
+  .card .hunk .h{color:var(--muted)}
+  #pin .card, #pin.card{max-width:none}
+  .card .pinhint{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);
+    font-size:11px;color:var(--muted)}
+
+  #hover{position:absolute;pointer-events:none;opacity:0;transform:translateY(4px);
+    transition:opacity .12s,transform .12s;z-index:5}
+  #hover.on{opacity:1;transform:translateY(0)}
+  #pin{position:absolute;top:14px;right:14px;bottom:auto;z-index:6;display:none;
+    max-height:calc(100% - 28px);overflow-y:auto;overscroll-behavior:contain;width:380px}
+  #pin.wide{bottom:14px;max-height:none;width:min(900px, 62vw)}
+  #pin .hunk{max-width:100%}
+  #pin.on{display:block}
+  #pin .close{position:absolute;top:8px;right:10px;font-size:16px;line-height:1;color:var(--muted);
+    cursor:pointer;background:none;border:0;padding:2px 4px}
+  footer{position:absolute;left:14px;bottom:12px;display:flex;gap:8px;z-index:4}
+  button.b{font:inherit;font-size:12px;padding:5px 11px;border-radius:7px;cursor:pointer;
+    border:1px solid var(--line);background:var(--card-bg);color:var(--fg)}
+  button.b:hover{border-color:var(--muted)}
+  .hint{position:absolute;left:14px;bottom:44px;font-size:11.5px;color:var(--muted);z-index:4}
+</style>
+</head>
+<body>
+<header>
+  <h1><!--{{TITLE}}--></h1>
+  <div class="sub"><!--{{SUBTITLE}}--></div>
+  <!--{{SOURCE}}-->
+  <!--{{NAV}}-->
+  <label class="pick"><input type="checkbox" id="diff"> diff</label>
+  <label class="pick">open in
+    <select id="editor">
+      <option value="system">system default</option>
+      <option value="vscode">VS Code</option>
+      <option value="cursor">Cursor</option>
+      <option value="rider">Rider</option>
+      <option value="idea">IntelliJ IDEA</option>
+      <option value="webstorm">WebStorm</option>
+      <option value="pycharm">PyCharm</option>
+      <option value="sublime">Sublime Text</option>
+      <option value="zed">Zed</option>
+    </select>
+  </label>
+  <div class="legend">
+    <span class="grp">file</span>
+    <span><i class="sw" style="background:#DCFCE7;border-color:var(--added)"></i>new</span>
+    <span><i class="sw" style="background:#FEF3C7;border-color:var(--modified)"></i>changed</span>
+    <span><i class="sw" style="background:#F2F2F2;border-color:var(--deleted)"></i>removed</span>
+    <span><i class="sw" style="background:transparent;border-color:var(--unchanged)"></i>untouched</span>
+    <span class="grp">content</span>
+    <span><i class="sw" style="background:#DCFCE7;border-color:var(--added)"></i>added</span>
+    <span><i class="sw" style="background:#FEE2E2;border-color:var(--edgemod)"></i>modified</span>
+    <span><i class="sw" style="background:#F2F2F2;border-color:var(--deleted)"></i>removed</span>
+    <span>thicker&nbsp;=&nbsp;more changes</span>
+  </div>
+</header>
+
+<div id="stage">
+  <!--{{SVG}}-->
+  <div id="hover" class="card"></div>
+  <div id="pin" class="card"><button class="close" title="close">×</button><div class="body"></div></div>
+  <footer>
+    <button class="b" id="reset">Reset view</button>
+    <button class="b" id="fit">Fit</button>
+  </footer>
+  <div class="hint">hover for detail · click to zoom &amp; pin · click a link in the panel to open the file · drag or scroll to pan · pinch or ⌘-scroll to zoom · Esc to close</div>
+</div>
+
+<script>
+const DATA   = /*{{DATA}}*/;
+const ROOT   = /*{{ROOT}}*/;
+let EDITOR = /*{{EDITOR}}*/ || "system";
+try { EDITOR = localStorage.getItem("superreview.editor") || EDITOR; } catch (e) {}
+// Two levels, deliberately different palettes:
+//   FILE  — what happened to the file as a whole. Yellow is the umbrella colour
+//           for "this file changed", so it can never be mistaken for a whole new
+//           or whole deleted file.
+//   CHANGE — what happened to a line or a call inside it: content added (green),
+//           content modified (red), content removed (grey).
+const FILE   = {added:"#16A34A", modified:"#B45309", deleted:"#C0C0C0", unchanged:"#111827"};
+const CHANGE = {added:"#16A34A", modified:"#DC2626", deleted:"#C0C0C0", unchanged:"#111827"};
+const FILLS  = {added:"#DCFCE7", modified:"#FEF3C7", deleted:"#F2F2F2", unchanged:"transparent"};
+const CFILLS = {added:"#DCFCE7", modified:"#FEE2E2", deleted:"#F2F2F2", unchanged:"transparent"};
+let SHOWDIFF = false;
+try { SHOWDIFF = localStorage.getItem("superreview.diff") === "1"; } catch (e) {}
+
+// "← previous" is a sibling file on disk. Published as an artifact the page is
+// no longer next to it, so a relative link would be dead — drop it there. An
+// absolute "prev" (an earlier report's artifact URL) still works and stays.
+if (location.protocol !== "file:") {
+  const nav = document.querySelector("a.nav");
+  if (nav && !/^[a-z][a-z0-9+.-]*:/i.test(nav.getAttribute("href")))
+    nav.outerHTML = '<span class="nav off">no previous diagram</span>';
+}
+
+// A unified hunk, coloured the way a diff normally reads. Entries without one
+// simply show nothing, so a diagram built from a plan document is unaffected.
+function hunk(text) {
+  if (!text) return "";
+  let lines = String(text).split("\n");
+  const body = lines.filter(l => /^[+\- ]\s*\S/.test(l));
+  const indent = body.length
+    ? Math.min(...body.map(l => l.slice(1).match(/^\s*/)[0].length)) : 0;
+  if (indent) lines = lines.map(l => /^[+\- ]/.test(l) ? l[0] + l.slice(1 + indent) : l);
+  const rows = lines.map(l => {
+    const c = l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "h" : "";
+    return `<span class="${c}">${esc(l)}</span>`;
+  }).join("\n");
+  return `<div class="hunk">${rows}</div>`;
+}
+
+const swatch = st => `<i class="sw" style="background:${CFILLS[st] || "transparent"};` +
+                     `border-color:${CHANGE[st] || "var(--muted)"}" title="${st}"></i>`;
+
+const stage = document.getElementById("stage");
+const svg   = stage.querySelector("svg");
+const hover = document.getElementById("hover");
+const pin   = document.getElementById("pin");
+
+/* ---------- editor links ---------- */
+// Every editor advertises its own URL scheme, so the page cannot know which one
+// this particular viewer uses — they pick it in the header and we remember it.
+// "system" falls back to file://, which respects the OS default app for the
+// extension but cannot jump to a line.
+const SCHEMES = {
+  vscode:   (abs, l) => "vscode://file" + abs + (l ? ":" + l : ""),
+  cursor:   (abs, l) => "cursor://file" + abs + (l ? ":" + l : ""),
+  zed:      (abs, l) => "zed://file" + abs + (l ? ":" + l : ""),
+  sublime:  (abs, l) => "subl://open?url=file://" + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  rider:    (abs, l) => "rider://open?file="    + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  idea:     (abs, l) => "idea://open?file="     + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  webstorm: (abs, l) => "webstorm://open?file=" + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  pycharm:  (abs, l) => "pycharm://open?file="  + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  system:   (abs)    => "file://" + abs.split("/").map(encodeURIComponent).join("/"),
+};
+function fileURL(path, line) {
+  if (!ROOT || !path) return null;
+  const abs = ROOT.replace(/\/$/, "") + "/" + path;
+  return (SCHEMES[EDITOR] || SCHEMES.system)(abs, line);
+}
+
+/* ---------- viewport: pan + zoom on the svg viewBox (no libraries) ---------- */
+let base = svg.getAttribute("viewBox");
+if (!base) {
+  const w = parseFloat(svg.getAttribute("width")) || 1000;
+  const h = parseFloat(svg.getAttribute("height")) || 700;
+  base = `0 0 ${w} ${h}`;
+  svg.setAttribute("viewBox", base);
+}
+svg.removeAttribute("width"); svg.removeAttribute("height");
+svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+const HOME = base.split(/\s+/).map(Number);
+let view = HOME.slice();
+const setView = v => { view = v; svg.setAttribute("viewBox", v.join(" ")); };
+// Wheel, pinch and drag events can arrive several times per frame, and each
+// viewBox write redraws the whole diagram. Keep `view` current on every event
+// but write it to the svg at most once per frame.
+let frame = null;
+const queueView = v => {
+  view = v;
+  frame = frame || requestAnimationFrame(() => { frame = null; svg.setAttribute("viewBox", view.join(" ")); });
+};
+
+let anim = null;
+function animateTo(target, ms = 420) {
+  if (anim) cancelAnimationFrame(anim);
+  const from = view.slice(), t0 = performance.now();
+  const ease = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
+  (function step(now){
+    const k = Math.min(1, (now - t0) / ms), e = ease(k);
+    setView(from.map((f, i) => f + (target[i] - f) * e));
+    anim = k < 1 ? requestAnimationFrame(step) : null;
+  })(t0);
+}
+// getBBox() is in the units of d2's nested svg, which its padding shifts
+// against the outer svg the view works in; map the box across.
+function boxOf(g) {
+  const b = g.getBBox(), m = svg.getScreenCTM().inverse().multiply(g.getScreenCTM());
+  const p = new DOMPoint(b.x, b.y).matrixTransform(m);
+  const q = new DOMPoint(b.x + b.width, b.y + b.height).matrixTransform(m);
+  return {x: p.x, y: p.y, width: q.x - p.x, height: q.y - p.y};
+}
+// The pinned panel covers the right of the stage, so a box is framed in the
+// screen width left of it.
+const freeWidth = () => pin.classList.contains("on") ? pin.offsetLeft - 14 : stage.clientWidth;
+function zoomToBBox(bb, pad = 0.55, clamp = true) {
+  const W = stage.clientWidth, H = stage.clientHeight, fw = freeWidth();
+  let w = bb.width * (1 + pad), h = bb.height * (1 + pad);
+  if (w / h < fw / H) w = h * fw / H; else h = w * H / fw;
+  w *= W / fw;                                      // widen from the free area to the whole stage
+  // A single box is tiny next to the whole graph, so framing it exactly fills
+  // the screen with one node and loses all context. Never zoom closer than a
+  // third of the full view — enough to read the box and still see its arrows.
+  if (clamp) {
+    const minW = HOME[2] / 3, minH = HOME[3] / 3;
+    if (w < minW || h < minH) { const k = Math.max(minW / w, minH / h); w *= k; h *= k; }
+  }
+  animateTo([bb.x + bb.width/2 - w * fw / W / 2, bb.y + bb.height/2 - h/2, w, h]);
+}
+// Slide the box to the middle of the free area without changing the zoom. The
+// view's aspect can differ from the stage's, and "meet" then centres it with a
+// margin of ox screen pixels.
+function centreOn(bb) {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const s = Math.min(W / view[2], H / view[3]), ox = (W - view[2] * s) / 2;
+  animateTo([bb.x + bb.width/2 - (freeWidth()/2 - ox) / s, bb.y + bb.height/2 - view[3]/2, view[2], view[3]]);
+}
+// Once the reader has picked a zoom level, keep it and only bring the box to
+// the middle; Reset or Fit hand control back to the automatic framing.
+const frameBox = bb => userZoomed ? centreOn(bb) : zoomToBBox(bb);
+
+/* ---------- card rendering ---------- */
+function renderCard(d, live) {
+  // `live` = the pinned panel, which stays put and can hold real links; the
+  // hover card follows the cursor, so its links would be unreachable.
+  const url0 = live && d.clickable ? fileURL(d.path, (d.changes[0] || {}).line) : null;
+  const head = url0 ? `<a class="t" href="${url0}">${esc(d.title)}</a>` : `<div class="t">${esc(d.title)}</div>`;
+  const blocks = (d.changes || []).map(c => {
+    const u = live && d.clickable ? fileURL(c.path || d.path, c.line) : null;
+    const st = c.status || d.status;
+    const head2 = [swatch(st),
+                   c.call ? `<b>${esc(c.call)}</b>` : "",
+                   c.line ? (u ? `<a class="lno" href="${u}">:${c.line}</a>`
+                               : `<span class="lno">:${c.line}</span>`) : ""].filter(Boolean).join(" ");
+    return `<div class="chg">${head2}
+      <div class="what">${esc(c.what || c.details || "")}</div>
+      ${c.why ? `<div class="why">${esc(c.why)}</div>` : ""}
+      ${live && SHOWDIFF ? hunk(c.diff) : ""}</div>`;
+  }).join("");
+  const bar = (d.kind === "node" ? FILE : CHANGE)[d.status] || "var(--muted)";
+  return `<div class="bar" style="background:${bar}"></div>
+          ${head}<div class="s">${esc(d.sub || "")}</div>${blocks}
+          ${live ? "" : '<div class="pinhint">click to pin this panel — its links open the file, and diffs show there</div>'}`;
+}
+const esc = s => String(s == null ? "" : s)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+/* ---------- bind every d2 group whose base64 class is in DATA ---------- */
+let pinned = null, pinnedBox = null;
+const targets = [];
+svg.querySelectorAll("g[class]").forEach(g => {
+  for (const c of g.getAttribute("class").split(/\s+/)) {
+    if (DATA[c]) { g.classList.add("d2-hit"); g.dataset.key = c; targets.push(g); break; }
+  }
+});
+
+function moveHover(ev) {
+  const r = stage.getBoundingClientRect();
+  hover.style.left = Math.min(ev.clientX - r.left + 16, r.width  - hover.offsetWidth  - 10) + "px";
+  hover.style.top  = Math.min(ev.clientY - r.top  + 16, r.height - hover.offsetHeight - 10) + "px";
+}
+
+targets.forEach(g => {
+  const d = DATA[g.dataset.key];
+  g.addEventListener("mouseenter", e => { hover.innerHTML = renderCard(d, false); hover.classList.add("on"); moveHover(e); });
+  g.addEventListener("mousemove", moveHover);
+  g.addEventListener("mouseleave", () => hover.classList.remove("on"));
+  g.addEventListener("click", e => {
+    e.stopPropagation();
+    if (panned) { panned = false; return; }
+    if ((e.metaKey || e.ctrlKey) && d.clickable) {          // ⌘/Ctrl-click opens the change
+      const u = fileURL(d.path, (d.changes[0] || {}).line);
+      if (u) { location.href = u; return; }
+    }
+    targets.forEach(o => o.classList.toggle("dimmed", o !== g));
+    pinned = d; pinnedBox = boxOf(g);
+    pin.classList.toggle("wide", SHOWDIFF);
+    pin.querySelector(".body").innerHTML = renderCard(d, true);  // pinned copy has live links
+    pin.classList.add("on");
+    hover.classList.remove("on");
+    frameBox(pinnedBox);                             // after the panel is up, so its width is known
+  });
+});
+
+/* ---------- pan / wheel-zoom / reset ---------- */
+let drag = null, panned = false;
+stage.addEventListener("mousedown", e => {
+  if (pin.contains(e.target)) return;
+  drag = {x:e.clientX, y:e.clientY, v:view.slice()};
+  panned = false;
+  stage.classList.add("dragging"); hover.classList.remove("on");
+});
+addEventListener("mousemove", e => {
+  if (!drag) return;
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 4) panned = true;
+  const k = view[2] / stage.clientWidth;
+  queueView([drag.v[0] - (e.clientX - drag.x)*k, drag.v[1] - (e.clientY - drag.y)*k, view[2], view[3]]);
+});
+addEventListener("mouseup", () => { drag = null; stage.classList.remove("dragging"); });
+let userZoomed = false;
+function zoomAt(clientX, clientY, f) {
+  const r = stage.getBoundingClientRect();
+  const px = view[0] + (clientX - r.left)/r.width  * view[2];
+  const py = view[1] + (clientY - r.top )/r.height * view[3];
+  queueView([px - (px - view[0])*f, py - (py - view[1])*f, view[2]*f, view[3]*f]);
+  userZoomed = true;
+}
+// Scroll pans and pinch zooms, as in a map. The browser reports a trackpad pinch
+// as a wheel event with ctrlKey set (no key is actually held); ⌘/Ctrl + mouse
+// wheel takes the same path. Deltas arrive in pixels, lines or pages.
+const wheelPx = (d, e) => d * (e.deltaMode === 1 ? 25 : e.deltaMode === 2 ? stage.clientHeight : 1);
+stage.addEventListener("wheel", e => {
+  if (pin.contains(e.target)) return;                       // let the panel scroll itself
+  e.preventDefault();
+  if (anim) { cancelAnimationFrame(anim); anim = null; }
+  if (e.ctrlKey || e.metaKey) {
+    // Scaled by how far the fingers or wheel moved, not by how many events
+    // arrived. A pinch sends small deltas, so it gets 10× the gain (as in
+    // d3-zoom); the clamp stops one Ctrl + mouse-wheel notch jumping too far.
+    const z = wheelPx(e.deltaY, e) * (e.ctrlKey ? 0.02 : 0.002);
+    zoomAt(e.clientX, e.clientY, 2 ** Math.max(-0.3, Math.min(0.3, z)));
+  } else {
+    const k = view[2] / stage.clientWidth;
+    queueView([view[0] + wheelPx(e.deltaX, e)*k, view[1] + wheelPx(e.deltaY, e)*k, view[2], view[3]]);
+  }
+}, {passive:false});
+// Safari reports a pinch as gesture events with a running scale instead.
+let gestureScale = 1;
+stage.addEventListener("gesturestart", e => { e.preventDefault(); gestureScale = 1; });
+stage.addEventListener("gesturechange", e => {
+  e.preventDefault();
+  if (anim) { cancelAnimationFrame(anim); anim = null; }
+  zoomAt(e.clientX, e.clientY, gestureScale / e.scale);
+  gestureScale = e.scale;
+});
+
+// Once the reader has zoomed, only Reset view or Fit may move the zoom again:
+// closing the panel (empty-space click, ×, Esc) leaves the view where it is.
+function unpin() {
+  targets.forEach(o => o.classList.remove("dimmed"));
+  pinned = null;
+  pin.classList.remove("on"); hover.classList.remove("on");
+  if (!userZoomed) animateTo(HOME.slice());
+}
+function reset() { userZoomed = false; unpin(); }
+// A drag ends in a click on the stage; without this guard every pan snapped the
+// view back home the moment the mouse came up.
+stage.addEventListener("click", e => {
+  if (panned) { panned = false; return; }
+  if (!pin.contains(e.target)) unpin();
+});
+document.getElementById("reset").addEventListener("click", e => { e.stopPropagation(); reset(); });
+document.getElementById("fit").addEventListener("click", e => {
+  e.stopPropagation();
+  targets.forEach(o => o.classList.remove("dimmed"));
+  userZoomed = false;
+  zoomToBBox(svg.getBBox(), 0.08, false);
+});
+pin.querySelector(".close").addEventListener("click", e => { e.stopPropagation(); unpin(); });
+const diffBox = document.getElementById("diff");
+diffBox.checked = SHOWDIFF;
+diffBox.addEventListener("click", e => e.stopPropagation());
+diffBox.addEventListener("change", () => {
+  SHOWDIFF = diffBox.checked;
+  try { localStorage.setItem("superreview.diff", SHOWDIFF ? "1" : "0"); } catch (e) {}
+  pin.classList.toggle("wide", SHOWDIFF);
+  if (pinned) {
+    pin.querySelector(".body").innerHTML = renderCard(pinned, true);
+    frameBox(pinnedBox);                             // the panel changed width
+  }
+});
+
+const picker = document.getElementById("editor");
+picker.value = EDITOR;
+picker.addEventListener("click", e => e.stopPropagation());
+picker.addEventListener("change", () => {
+  EDITOR = picker.value;
+  try { localStorage.setItem("superreview.editor", EDITOR); } catch (e) {}
+  if (pinned) pin.querySelector(".body").innerHTML = renderCard(pinned, true);  // relink
+});
+
+addEventListener("keydown", e => { if (e.key === "Escape") unpin(); });
+</script>
+</body>
+</html>
