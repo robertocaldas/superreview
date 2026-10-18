@@ -17,7 +17,7 @@ Pages are written to `docs/superreview/` in the repo, each linking back to the p
 ## Why not UML?
 
 UML describes how a whole system is built, with many kinds of diagram and many rules. I wanted to try
-something simpler, made for one job: seeing a diff. Each box is a file and each arrow is a call. Colour shows
+something simpler, made for one job: to make code reviews easier. Each box is a file and each arrow is a call. Colour shows
 what changed, and the AI writes a short note on every box and arrow that says what changed and why.
 
 ## Requirements
