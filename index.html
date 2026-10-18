@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Change Diagram</title>
+<style>
+  :root{
+    --bg:#FFFFFF; --panel:#FAFAFA; --line:#E5E7EB; --fg:#111827; --muted:#6B7280;
+    --added:#16A34A; --modified:#B45309; --deleted:#C0C0C0; --unchanged:#111827; --edgemod:#DC2626;
+    --card-bg:#FFFFFF; --card-shadow:0 8px 30px rgba(0,0,0,.16); --link:#2563EB;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0B0F17; --panel:#111827; --line:#1F2937; --fg:#E5E7EB; --muted:#9CA3AF;
+      --card-bg:#111827; --card-shadow:0 8px 30px rgba(0,0,0,.6); --link:#60A5FA;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0B0F17; --panel:#111827; --line:#1F2937; --fg:#E5E7EB; --muted:#9CA3AF;
+    --card-bg:#111827; --card-shadow:0 8px 30px rgba(0,0,0,.6); --link:#60A5FA;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;overflow:hidden}
+  header{padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;flex:0 0 auto}
+  h1{margin:0;font-size:15px;font-weight:650;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:12.5px}
+  .src{color:var(--muted);font-size:11.5px;border:1px solid var(--line);border-radius:7px;
+    padding:3px 9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .nav{font-size:12px;color:var(--link);text-decoration:none;border:1px solid var(--line);
+    padding:3px 9px;border-radius:7px}
+  .nav:hover{border-color:var(--link)}
+  .nav.off{color:var(--muted);border-style:dashed;cursor:default}
+  .pick{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
+  .pick input{accent-color:var(--link);margin:0}
+  .pick select{font:inherit;font-size:12px;color:var(--fg);background:var(--card-bg);
+    border:1px solid var(--line);border-radius:7px;padding:3px 6px}
+  .legend{margin-left:auto;display:flex;gap:13px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .legend .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;opacity:.65;
+    padding-left:8px;border-left:1px solid var(--line)}
+  .sw{width:11px;height:11px;border-radius:3px;border:2px solid}
+  .ln{width:18px;height:0;border-top:3px solid}
+  #stage{position:relative;flex:1 1 auto;overflow:hidden;cursor:grab}
+  #stage.dragging{cursor:grabbing}
+  #stage svg{width:100%;height:100%;display:block}
+  #stage svg .d2-hit{cursor:pointer}
+  #stage svg .dimmed{opacity:.2;transition:opacity .25s}
+
+  .card{padding:11px 13px;border-radius:11px;background:var(--card-bg);
+    border:1px solid var(--line);box-shadow:var(--card-shadow);max-width:380px}
+  .card .bar{height:3px;border-radius:2px;margin-bottom:8px}
+  .card .t{font-weight:650;font-size:12.5px;word-break:break-all}
+  .card a.t{color:var(--link);text-decoration:none}
+  .card a.t:hover{text-decoration:underline}
+  .card .s{font-size:10.5px;color:var(--muted);margin:3px 0 8px;text-transform:uppercase;letter-spacing:.05em}
+  .card .chg{font-size:12.5px}
+  .card .chg .sw{display:inline-block;vertical-align:-1px;margin-right:5px}
+  .card .chg + .chg{border-top:1px solid var(--line);margin-top:9px;padding-top:9px}
+  .card .lno{font:11.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);
+    text-decoration:none;border-bottom:1px dotted var(--muted)}
+  .card a.lno{color:var(--link);border-color:var(--link)}
+  .card .what{margin-top:2px;white-space:pre-wrap}
+  .card .why{margin-top:3px;color:var(--muted)}
+  .card .hunk{margin-top:6px;padding:6px 8px;border-radius:6px;background:var(--panel);
+    border:1px solid var(--line);overflow-x:auto;
+    font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;tab-size:2}
+  .card .hunk .a{color:#16A34A}
+  .card .hunk .d{color:#DC2626}
+  .card .hunk .h{color:var(--muted)}
+  #pin .card, #pin.card{max-width:none}
+  .card .pinhint{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);
+    font-size:11px;color:var(--muted)}
+
+  #hover{position:absolute;pointer-events:none;opacity:0;transform:translateY(4px);
+    transition:opacity .12s,transform .12s;z-index:5}
+  #hover.on{opacity:1;transform:translateY(0)}
+  #pin{position:absolute;top:14px;right:14px;bottom:auto;z-index:6;display:none;
+    max-height:calc(100% - 28px);overflow-y:auto;overscroll-behavior:contain;width:380px}
+  #pin.wide{bottom:14px;max-height:none;width:min(900px, 62vw)}
+  #pin .hunk{max-width:100%}
+  #pin.on{display:block}
+  #pin .close{position:absolute;top:8px;right:10px;font-size:16px;line-height:1;color:var(--muted);
+    cursor:pointer;background:none;border:0;padding:2px 4px}
+  footer{position:absolute;left:14px;bottom:12px;display:flex;gap:8px;z-index:4}
+  button.b{font:inherit;font-size:12px;padding:5px 11px;border-radius:7px;cursor:pointer;
+    border:1px solid var(--line);background:var(--card-bg);color:var(--fg)}
+  button.b:hover{border-color:var(--muted)}
+  .hint{position:absolute;left:14px;bottom:44px;font-size:11.5px;color:var(--muted);z-index:4}
+</style>
+</head>
+<body>
+<header>
+  <h1>Split payments at checkout</h1>
+  <div class="sub">2 added · 4 modified · 1 deleted · +212 / -88</div>
+  <div class="src">example · an invented change set, for illustration</div>
+  <span class="nav off">no previous diagram</span>
+  <label class="pick"><input type="checkbox" id="diff"> diff</label>
+  <label class="pick">open in
+    <select id="editor">
+      <option value="system">system default</option>
+      <option value="vscode">VS Code</option>
+      <option value="cursor">Cursor</option>
+      <option value="rider">Rider</option>
+      <option value="idea">IntelliJ IDEA</option>
+      <option value="webstorm">WebStorm</option>
+      <option value="pycharm">PyCharm</option>
+      <option value="sublime">Sublime Text</option>
+      <option value="zed">Zed</option>
+    </select>
+  </label>
+  <div class="legend">
+    <span class="grp">file</span>
+    <span><i class="sw" style="background:#DCFCE7;border-color:var(--added)"></i>new</span>
+    <span><i class="sw" style="background:#FEF3C7;border-color:var(--modified)"></i>changed</span>
+    <span><i class="sw" style="background:#F2F2F2;border-color:var(--deleted)"></i>removed</span>
+    <span><i class="sw" style="background:transparent;border-color:var(--unchanged)"></i>untouched</span>
+    <span class="grp">content</span>
+    <span><i class="sw" style="background:#DCFCE7;border-color:var(--added)"></i>added</span>
+    <span><i class="sw" style="background:#FEE2E2;border-color:var(--edgemod)"></i>modified</span>
+    <span><i class="sw" style="background:#F2F2F2;border-color:var(--deleted)"></i>removed</span>
+    <span>thicker&nbsp;=&nbsp;more changes</span>
+  </div>
+</header>
+
+<div id="stage">
+  <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.8.2" preserveAspectRatio="xMinYMin meet" viewBox="0 0 2061 584"><svg class="d2-2280503916 d2-svg" width="2061" height="584" viewBox="-29 -29 2061 584"><rect x="-29.000000" y="-29.000000" width="2061.000000" height="584.000000" rx="0.000000" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.d2-2280503916 .text {
+	font-family: "d2-2280503916-font-regular";
+}
+@font-face {
+	font-family: d2-2280503916-font-regular;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-2280503916 .text-bold {
+	font-family: "d2-2280503916-font-bold";
+}
+@font-face {
+	font-family: d2-2280503916-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-2280503916 .text-italic {
+	font-family: "d2-2280503916-font-italic";
+}
+@font-face {
+	font-family: d2-2280503916-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-2280503916 .fill-N1{fill:#0A0F25;}
+		.d2-2280503916 .fill-N2{fill:#676C7E;}
+		.d2-2280503916 .fill-N3{fill:#9499AB;}
+		.d2-2280503916 .fill-N4{fill:#CFD2DD;}
+		.d2-2280503916 .fill-N5{fill:#DEE1EB;}
+		.d2-2280503916 .fill-N6{fill:#EEF1F8;}
+		.d2-2280503916 .fill-N7{fill:#FFFFFF;}
+		.d2-2280503916 .fill-B1{fill:#0D32B2;}
+		.d2-2280503916 .fill-B2{fill:#0D32B2;}
+		.d2-2280503916 .fill-B3{fill:#E3E9FD;}
+		.d2-2280503916 .fill-B4{fill:#E3E9FD;}
+		.d2-2280503916 .fill-B5{fill:#EDF0FD;}
+		.d2-2280503916 .fill-B6{fill:#F7F8FE;}
+		.d2-2280503916 .fill-AA2{fill:#4A6FF3;}
+		.d2-2280503916 .fill-AA4{fill:#EDF0FD;}
+		.d2-2280503916 .fill-AA5{fill:#F7F8FE;}
+		.d2-2280503916 .fill-AB4{fill:#EDF0FD;}
+		.d2-2280503916 .fill-AB5{fill:#F7F8FE;}
+		.d2-2280503916 .stroke-N1{stroke:#0A0F25;}
+		.d2-2280503916 .stroke-N2{stroke:#676C7E;}
+		.d2-2280503916 .stroke-N3{stroke:#9499AB;}
+		.d2-2280503916 .stroke-N4{stroke:#CFD2DD;}
+		.d2-2280503916 .stroke-N5{stroke:#DEE1EB;}
+		.d2-2280503916 .stroke-N6{stroke:#EEF1F8;}
+		.d2-2280503916 .stroke-N7{stroke:#FFFFFF;}
+		.d2-2280503916 .stroke-B1{stroke:#0D32B2;}
+		.d2-2280503916 .stroke-B2{stroke:#0D32B2;}
+		.d2-2280503916 .stroke-B3{stroke:#E3E9FD;}
+		.d2-2280503916 .stroke-B4{stroke:#E3E9FD;}
+		.d2-2280503916 .stroke-B5{stroke:#EDF0FD;}
+		.d2-2280503916 .stroke-B6{stroke:#F7F8FE;}
+		.d2-2280503916 .stroke-AA2{stroke:#4A6FF3;}
+		.d2-2280503916 .stroke-AA4{stroke:#EDF0FD;}
+		.d2-2280503916 .stroke-AA5{stroke:#F7F8FE;}
+		.d2-2280503916 .stroke-AB4{stroke:#EDF0FD;}
+		.d2-2280503916 .stroke-AB5{stroke:#F7F8FE;}
+		.d2-2280503916 .background-color-N1{background-color:#0A0F25;}
+		.d2-2280503916 .background-color-N2{background-color:#676C7E;}
+		.d2-2280503916 .background-color-N3{background-color:#9499AB;}
+		.d2-2280503916 .background-color-N4{background-color:#CFD2DD;}
+		.d2-2280503916 .background-color-N5{background-color:#DEE1EB;}
+		.d2-2280503916 .background-color-N6{background-color:#EEF1F8;}
+		.d2-2280503916 .background-color-N7{background-color:#FFFFFF;}
+		.d2-2280503916 .background-color-B1{background-color:#0D32B2;}
+		.d2-2280503916 .background-color-B2{background-color:#0D32B2;}
+		.d2-2280503916 .background-color-B3{background-color:#E3E9FD;}
+		.d2-2280503916 .background-color-B4{background-color:#E3E9FD;}
+		.d2-2280503916 .background-color-B5{background-color:#EDF0FD;}
+		.d2-2280503916 .background-color-B6{background-color:#F7F8FE;}
+		.d2-2280503916 .background-color-AA2{background-color:#4A6FF3;}
+		.d2-2280503916 .background-color-AA4{background-color:#EDF0FD;}
+		.d2-2280503916 .background-color-AA5{background-color:#F7F8FE;}
+		.d2-2280503916 .background-color-AB4{background-color:#EDF0FD;}
+		.d2-2280503916 .background-color-AB5{background-color:#F7F8FE;}
+		.d2-2280503916 .color-N1{color:#0A0F25;}
+		.d2-2280503916 .color-N2{color:#676C7E;}
+		.d2-2280503916 .color-N3{color:#9499AB;}
+		.d2-2280503916 .color-N4{color:#CFD2DD;}
+		.d2-2280503916 .color-N5{color:#DEE1EB;}
+		.d2-2280503916 .color-N6{color:#EEF1F8;}
+		.d2-2280503916 .color-N7{color:#FFFFFF;}
+		.d2-2280503916 .color-B1{color:#0D32B2;}
+		.d2-2280503916 .color-B2{color:#0D32B2;}
+		.d2-2280503916 .color-B3{color:#E3E9FD;}
+		.d2-2280503916 .color-B4{color:#E3E9FD;}
+		.d2-2280503916 .color-B5{color:#EDF0FD;}
+		.d2-2280503916 .color-B6{color:#F7F8FE;}
+		.d2-2280503916 .color-AA2{color:#4A6FF3;}
+		.d2-2280503916 .color-AA4{color:#EDF0FD;}
+		.d2-2280503916 .color-AA5{color:#F7F8FE;}
+		.d2-2280503916 .color-AB4{color:#EDF0FD;}
+		.d2-2280503916 .color-AB5{color:#F7F8FE;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.sketch-overlay-B1{fill:url(#streaks-darker-d2-2280503916);mix-blend-mode:lighten}.sketch-overlay-B2{fill:url(#streaks-darker-d2-2280503916);mix-blend-mode:lighten}.sketch-overlay-B3{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-B4{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-B5{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-B6{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-AA2{fill:url(#streaks-dark-d2-2280503916);mix-blend-mode:overlay}.sketch-overlay-AA4{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-AA5{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-AB4{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-AB5{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-N1{fill:url(#streaks-darker-d2-2280503916);mix-blend-mode:lighten}.sketch-overlay-N2{fill:url(#streaks-dark-d2-2280503916);mix-blend-mode:overlay}.sketch-overlay-N3{fill:url(#streaks-normal-d2-2280503916);mix-blend-mode:color-burn}.sketch-overlay-N4{fill:url(#streaks-normal-d2-2280503916);mix-blend-mode:color-burn}.sketch-overlay-N5{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-N6{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.sketch-overlay-N7{fill:url(#streaks-bright-d2-2280503916);mix-blend-mode:darken}.light-code{display: block}.dark-code{display: none}]]></style><g class="YXBp"><g class="shape" ><rect x="12.000000" y="200.000000" width="732.000000" height="264.000000" stroke="#D8D8D8" fill="#FAFAFA" style="stroke-width:2;" /></g><text x="378.000000" y="233.000000" fill="#6B7280" class="text" style="text-anchor:middle;font-size:28px">src/api</text></g><g class="cGF5bWVudHM="><g class="shape" ><rect x="1026.000000" y="12.000000" width="965.000000" height="502.000000" stroke="#D8D8D8" fill="#FAFAFA" style="stroke-width:2;" /></g><text x="1508.500000" y="45.000000" fill="#6B7280" class="text" style="text-anchor:middle;font-size:28px">src/payments</text></g><g class="YXBpLm4w"><g class="shape" ><rect x="62.000000" y="272.000000" width="186.000000" height="120.000000" stroke="#B45309" fill="#FEF3C7" style="stroke-width:2;" /></g><text x="155.000000" y="329.500000" fill="#78350F" class="text-bold" style="text-anchor:middle;font-size:16px"><tspan x="155.000000" dy="0.000000">CheckoutController</tspan><tspan x="155.000000" dy="18.500000">controller</tspan></text></g><g class="YXBpLm4x"><g class="shape" ><rect x="556.000000" y="291.000000" width="138.000000" height="82.000000" stroke="#B45309" fill="#FEF3C7" style="stroke-width:2;" /></g><text x="625.000000" y="329.500000" fill="#78350F" class="text-bold" style="text-anchor:middle;font-size:16px"><tspan x="625.000000" dy="0.000000">OrderService</tspan><tspan x="625.000000" dy="18.500000">service</tspan></text></g><g class="cGF5bWVudHMubjI="><g class="shape" ><rect x="1076.000000" y="180.000000" width="165.000000" height="120.000000" stroke="#16A34A" fill="#DCFCE7" style="stroke-width:2;" /></g><text x="1158.500000" y="237.500000" fill="#14532D" class="text-bold" style="text-anchor:middle;font-size:16px"><tspan x="1158.500000" dy="0.000000">PaymentPlanner</tspan><tspan x="1158.500000" dy="18.500000">service</tspan></text></g><g class="cGF5bWVudHMubjM="><g class="shape" ><rect x="1618.000000" y="62.000000" width="323.000000" height="284.000000" stroke="#B45309" fill="#FFFBEB" style="stroke-width:2;" /></g><text x="1779.500000" y="91.000000" fill="#78350F" class="text" style="text-anchor:middle;font-size:24px">PaymentProvider · interface</text></g><g class="cGF5bWVudHMubjY="><g class="shape" ><rect x="1095.000000" y="382.000000" width="127.000000" height="82.000000" stroke="#C0C0C0" fill="#F2F2F2" style="stroke-width:2;stroke-dasharray:8.000000,7.892511;" /></g><text x="1158.500000" y="420.500000" fill="#8A8A8A" class="text-bold" style="text-anchor:middle;font-size:16px"><tspan x="1158.500000" dy="0.000000">chargeCard</tspan><tspan x="1158.500000" dy="18.500000">function</tspan></text></g><g class="cGF5bWVudHMubjc="><g class="shape" ><rect x="1618.000000" y="366.000000" width="96.000000" height="82.000000" stroke="#111827" fill="#FFFFFF" style="stroke-width:2;" /></g><text x="1666.000000" y="404.500000" fill="#111827" class="text-bold" style="text-anchor:middle;font-size:16px"><tspan x="1666.000000" dy="0.000000">Ledger</tspan><tspan x="1666.000000" dy="18.500000">service</tspan></text></g><g class="cGF5bWVudHMubjMubjQ="><g class="shape" ><rect x="1696.000000" y="214.000000" width="141.000000" height="82.000000" stroke="#B45309" fill="#FEF3C7" style="stroke-width:2;" /></g><text x="1766.500000" y="252.500000" fill="#78350F" class="text-bold" style="text-anchor:middle;font-size:16px"><tspan x="1766.500000" dy="0.000000">CardProvider</tspan><tspan x="1766.500000" dy="18.500000">provider</tspan></text></g><g class="cGF5bWVudHMubjMubjU="><g class="shape" ><rect x="1696.000000" y="112.000000" width="167.000000" height="82.000000" stroke="#16A34A" fill="#DCFCE7" style="stroke-width:2;" /></g><text x="1779.500000" y="150.500000" fill="#14532D" class="text-bold" style="text-anchor:middle;font-size:16px"><tspan x="1779.500000" dy="0.000000">GiftCardProvider</tspan><tspan x="1779.500000" dy="18.500000">provider</tspan></text></g><g class="KGFwaS5uMCAtJmd0OyBwYXltZW50cy5uMilbMF0="><marker id="mk-d2-2280503916-1188932902" markerWidth="16.000000" markerHeight="20.000000" refX="10.000000" refY="10.000000" viewBox="0.000000 0.000000 16.000000 20.000000" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0.000000,0.000000 16.000000,10.000000 0.000000,20.000000" fill="#16A34A" class="connection" stroke-width="4" /> </marker><path d="M 251.000000 302.165985 L 278.000000 302.165985 S 288.000000 302.165985 288.000000 292.165985 L 288.000000 260.166000 S 288.000000 250.166000 298.000000 250.166000 L 1069.000000 250.166000" stroke="#16A34A" fill="none" class="connection" style="stroke-width:4;" marker-end="url(#mk-d2-2280503916-1188932902)" /><rect x="626.000000" y="240.000000" width="20" height="21" fill="#FAFAFA"/><text x="636.000000" y="256.000000" fill="#16A34A" class="text-italic" style="text-anchor:middle;font-size:16px">x2</text></g><g class="KGFwaS5uMCAtJmd0OyBwYXltZW50cy5uNilbMF0="><marker id="mk-d2-2280503916-214025489" markerWidth="10.000000" markerHeight="12.000000" refX="7.000000" refY="6.000000" viewBox="0.000000 0.000000 10.000000 12.000000" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0.000000,0.000000 10.000000,6.000000 0.000000,12.000000" fill="#C0C0C0" class="connection" stroke-width="2" /> </marker><path d="M 250.000000 362.165985 L 278.000000 362.165985 S 288.000000 362.165985 288.000000 372.165985 L 288.000000 403.165985 S 288.000000 413.165985 298.000000 413.165985 L 1091.000000 413.165985" stroke="#C0C0C0" fill="none" class="connection" style="stroke-width:2;stroke-dasharray:8.000000,7.892511;" marker-end="url(#mk-d2-2280503916-214025489)" /><rect x="583.000000" y="403.000000" width="126" height="21" fill="#FAFAFA"/><text x="646.000000" y="419.000000" fill="#C0C0C0" class="text-italic" style="text-anchor:middle;font-size:16px">chargeCard(order)</text></g><g class="YXBpLihuMCAtJmd0OyBuMSlbMF0="><marker id="mk-d2-2280503916-1368950235" markerWidth="10.000000" markerHeight="12.000000" refX="7.000000" refY="6.000000" viewBox="0.000000 0.000000 10.000000 12.000000" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0.000000,0.000000 10.000000,6.000000 0.000000,12.000000" fill="#DC2626" class="connection" stroke-width="2" /> </marker><path d="M 250.000000 332.165985 L 552.000000 332.165985" stroke="#DC2626" fill="none" class="connection" style="stroke-width:2;" marker-end="url(#mk-d2-2280503916-1368950235)" /><rect x="321.000000" y="322.000000" width="162" height="21" fill="#FAFAFA"/><text x="402.000000" y="338.000000" fill="#DC2626" class="text-italic" style="text-anchor:middle;font-size:16px">markPaid(id, payments)</text></g><g class="cGF5bWVudHMuKG4yIC0mZ3Q7IG4zLm41KVswXQ=="><marker id="mk-d2-2280503916-2893757124" markerWidth="10.000000" markerHeight="12.000000" refX="7.000000" refY="6.000000" viewBox="0.000000 0.000000 10.000000 12.000000" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0.000000,0.000000 10.000000,6.000000 0.000000,12.000000" fill="#16A34A" class="connection" stroke-width="2" /> </marker><path d="M 1243.000000 210.332993 L 1271.000000 210.332993 S 1281.000000 210.332993 1281.000000 200.332993 L 1281.000000 145.666000 S 1281.000000 135.666000 1291.000000 135.666000 L 1692.000000 135.666000" stroke="#16A34A" fill="none" class="connection" style="stroke-width:2;" marker-end="url(#mk-d2-2280503916-2893757124)" /><rect x="1373.000000" y="125.000000" width="116" height="21" fill="#FAFAFA"/><text x="1431.000000" y="141.000000" fill="#16A34A" class="text-italic" style="text-anchor:middle;font-size:16px">capture(amount)</text></g><g class="cGF5bWVudHMuKG4yIC0mZ3Q7IG4zLm40KVswXQ=="><path d="M 1243.000000 240.332993 L 1321.000000 240.332993 S 1331.000000 240.332993 1331.000000 230.332993 L 1331.000000 205.832993 S 1331.000000 195.832993 1341.000000 195.832993 L 1513.000000 195.832993 S 1523.000000 195.832993 1523.000000 205.832993 L 1523.000000 231.332993 S 1523.000000 241.332993 1533.000000 241.332993 L 1692.000000 241.332993" stroke="#16A34A" fill="none" class="connection" style="stroke-width:2;" marker-end="url(#mk-d2-2280503916-2893757124)" /><rect x="1425.000000" y="185.000000" width="89" height="21" fill="#FAFAFA"/><text x="1469.500000" y="201.000000" fill="#16A34A" class="text-italic" style="text-anchor:middle;font-size:16px">capture(rest)</text></g><g class="cGF5bWVudHMuKG4yIC0mZ3Q7IG43KVswXQ=="><path d="M 1243.000000 270.333008 L 1271.000000 270.333008 S 1281.000000 270.333008 1281.000000 280.333008 L 1281.000000 351.500000 S 1281.000000 361.500000 1291.000000 361.500000 L 1563.000000 361.500000 S 1573.000000 361.500000 1573.000000 371.500000 L 1573.000000 397.000000 S 1573.000000 407.000000 1583.000000 407.000000 L 1614.000000 407.000000" stroke="#16A34A" fill="none" class="connection" style="stroke-width:2;" marker-end="url(#mk-d2-2280503916-2893757124)" /><rect x="1350.000000" y="351.000000" width="114" height="21" fill="#FAFAFA"/><text x="1407.000000" y="367.000000" fill="#16A34A" class="text-italic" style="text-anchor:middle;font-size:16px">record(payment)</text></g><g class="cGF5bWVudHMuKG42IC0mZ3Q7IG4zLm40KVswXQ=="><path d="M 1224.000000 423.000000 L 1513.000000 423.000000 S 1523.000000 423.000000 1523.000000 413.000000 L 1523.000000 278.665985 S 1523.000000 268.665985 1533.000000 268.665985 L 1692.000000 268.665985" stroke="#C0C0C0" fill="none" class="connection" style="stroke-width:2;stroke-dasharray:8.000000,7.892511;" marker-end="url(#mk-d2-2280503916-214025489)" /><rect x="1478.000000" y="399.000000" width="90" height="21" fill="#FAFAFA"/><text x="1523.000000" y="415.000000" fill="#C0C0C0" class="text-italic" style="text-anchor:middle;font-size:16px">charge(total)</text></g></svg></svg>
+
+  <div id="hover" class="card"></div>
+  <div id="pin" class="card"><button class="close" title="close">×</button><div class="body"></div></div>
+  <footer>
+    <button class="b" id="reset">Reset view</button>
+    <button class="b" id="fit">Fit</button>
+  </footer>
+  <div class="hint">hover for detail · click to zoom &amp; pin · click a link in the panel to open the file · drag or scroll to pan · pinch or ⌘-scroll to zoom · Esc to close</div>
+</div>
+
+<script>
+const DATA   = {"KGFwaS5uMCAtJmd0OyBwYXltZW50cy5uMilbMF0=": {"kind": "edge", "status": "added", "title": "checkout.ts  \u2192  planner.ts", "sub": "2 changes \u00b7 added", "path": "src/api/checkout.ts", "clickable": false, "changes": [{"call": "plan(order)", "line": 33, "path": "src/api/checkout.ts", "what": "Asks the planner how to split the order total.", "why": "Checkout no longer decides how to pay."}, {"call": "execute(plan)", "line": 34, "path": "src/api/checkout.ts", "what": "Runs the plan and gets back the payments made.", "why": "Checkout only needs the result."}]}, "KGFwaS5uMCAtJmd0OyBwYXltZW50cy5uNilbMF0=": {"kind": "edge", "status": "deleted", "title": "checkout.ts  \u2192  legacy-charge.ts", "sub": "1 change \u00b7 deleted", "path": "src/api/checkout.ts", "clickable": false, "changes": [{"call": "chargeCard(order)", "line": 33, "path": "src/api/checkout.ts", "what": "No longer charges the card directly.", "why": "Replaced by the planner."}]}, "YXBpLihuMCAtJmd0OyBuMSlbMF0=": {"kind": "edge", "status": "modified", "title": "checkout.ts  \u2192  orders.ts", "sub": "1 change \u00b7 modified", "path": "src/api/checkout.ts", "clickable": false, "changes": [{"call": "markPaid(id, payments)", "line": 36, "path": "src/api/checkout.ts", "what": "Passes the list of payments instead of one charge id.", "why": "Matches the new markPaid signature."}]}, "cGF5bWVudHMuKG4yIC0mZ3Q7IG4zLm41KVswXQ==": {"kind": "edge", "status": "added", "title": "planner.ts  \u2192  giftcard.ts", "sub": "1 change \u00b7 added", "path": "src/payments/planner.ts", "clickable": false, "changes": [{"call": "capture(amount)", "line": 24, "path": "src/payments/planner.ts", "what": "Takes the gift card part first.", "why": "Gift card balance is spent before the card."}]}, "cGF5bWVudHMuKG4yIC0mZ3Q7IG4zLm40KVswXQ==": {"kind": "edge", "status": "added", "title": "planner.ts  \u2192  card.ts", "sub": "1 change \u00b7 added", "path": "src/payments/planner.ts", "clickable": false, "changes": [{"call": "capture(rest)", "line": 24, "path": "src/payments/planner.ts", "what": "Puts what is left on the card.", "why": "The card covers the rest of the total."}]}, "cGF5bWVudHMuKG4yIC0mZ3Q7IG43KVswXQ==": {"kind": "edge", "status": "added", "title": "planner.ts  \u2192  ledger.ts", "sub": "1 change \u00b7 added", "path": "src/payments/planner.ts", "clickable": false, "changes": [{"call": "record(payment)", "line": 25, "path": "src/payments/planner.ts", "what": "Writes each captured payment to the ledger.", "why": "Finance reconciles each payment separately."}]}, "cGF5bWVudHMuKG42IC0mZ3Q7IG4zLm40KVswXQ==": {"kind": "edge", "status": "deleted", "title": "legacy-charge.ts  \u2192  card.ts", "sub": "1 change \u00b7 deleted", "path": "src/payments/legacy-charge.ts", "clickable": false, "changes": [{"call": "charge(total)", "path": "src/payments/legacy-charge.ts", "what": "The old one-shot card charge.", "why": "Removed with chargeCard."}]}, "YXBpLm4w": {"kind": "node", "status": "modified", "title": "src/api/checkout.ts", "sub": "controller \u00b7 modified", "path": "src/api/checkout.ts", "clickable": false, "changes": [{"line": 41, "status": "added", "what": "A declined payment now returns 402 with the step that failed.", "why": "With several payments per order, the client needs to know which one to retry.", "diff": "@@ -38,4 +38,9 @@ export class CheckoutController {\n   } catch (err) {\n-    return res.status(500).end();\n+    if (err instanceof PaymentDeclined) {\n+      return res.status(402).json({ step: err.step, reason: err.reason });\n+    }\n+    return res.status(500).end();\n   }"}]}, "YXBpLm4x": {"kind": "node", "status": "modified", "title": "src/api/orders.ts", "sub": "service \u00b7 modified", "path": "src/api/orders.ts", "clickable": false, "changes": [{"line": 27, "status": "modified", "what": "markPaid takes the list of payments instead of one card charge id.", "why": "An order can now be paid by a gift card and a card together.", "diff": "@@ -27,3 +27,3 @@ export class OrderService {\n-  markPaid(orderId: string, chargeId: string) {\n+  markPaid(orderId: string, payments: Payment[]) {\n     const order = this.repo.get(orderId);"}]}, "cGF5bWVudHMubjI=": {"kind": "node", "status": "added", "title": "src/payments/planner.ts", "sub": "service \u00b7 added", "path": "src/payments/planner.ts", "clickable": false, "changes": [{"line": 12, "what": "plan() spends gift card balance first, then puts the rest on the card.", "why": "Customers expect the gift card to be used before they are charged.", "diff": "@@ new file, lines 12-18 @@\n+  plan(order: Order): Plan {\n+    const gift = Math.min(order.giftCardBalance, order.total);\n+    return [\n+      gift > 0 && { provider: \"giftcard\", amount: gift },\n+      { provider: \"card\", amount: order.total - gift },\n+    ].filter(Boolean);\n+  }"}, {"line": 21, "what": "execute() captures each step in order and refunds earlier steps if one fails.", "why": "A half-paid order must never be left behind.", "diff": "@@ new file, lines 21-27 @@\n+  async execute(plan: Plan): Promise<Payment[]> {\n+    const done: Payment[] = [];\n+    for (const step of plan) {\n+      try { done.push(await this.providers[step.provider].capture(step.amount)); }\n+      catch (err) { await this.refundAll(done); throw new PaymentDeclined(step, err); }\n+    }\n+    return done;"}]}, "cGF5bWVudHMubjM=": {"kind": "node", "status": "modified", "title": "src/payments/provider.ts", "sub": "interface \u00b7 modified", "path": "src/payments/provider.ts", "clickable": false, "changes": [{"line": 4, "status": "modified", "what": "charge(total) becomes capture(amount).", "why": "A provider now pays for part of an order, not always the whole of it.", "diff": "@@ -3,3 +3,3 @@ export interface PaymentProvider {\n   readonly name: string;\n-  charge(total: Money): Promise<string>;\n+  capture(amount: Money): Promise<Payment>;"}]}, "cGF5bWVudHMubjMubjQ=": {"kind": "node", "status": "modified", "title": "src/payments/card.ts", "sub": "provider \u00b7 modified", "path": "src/payments/card.ts", "clickable": false, "changes": [{"line": 18, "status": "modified", "what": "Implements capture(amount) for a partial amount.", "why": "Follows the new PaymentProvider contract.", "diff": "@@ -18,4 +18,4 @@ export class CardProvider implements PaymentProvider {\n-  async charge(total: Money) {\n-    return (await this.gateway.charge(this.token, total)).id;\n+  async capture(amount: Money) {\n+    return toPayment(await this.gateway.charge(this.token, amount));"}]}, "cGF5bWVudHMubjMubjU=": {"kind": "node", "status": "added", "title": "src/payments/giftcard.ts", "sub": "provider \u00b7 added", "path": "src/payments/giftcard.ts", "clickable": false, "changes": [{"line": 9, "what": "Takes the amount off the gift card balance.", "why": "Gift cards are the new way to pay.", "diff": "@@ new file, lines 9-13 @@\n+  async capture(amount: Money) {\n+    const card = await this.cards.lock(this.code);\n+    if (card.balance < amount) throw new InsufficientBalance(card.balance);\n+    return toPayment(await this.cards.debit(card, amount));\n+  }"}]}, "cGF5bWVudHMubjY=": {"kind": "node", "status": "deleted", "title": "src/payments/legacy-charge.ts", "sub": "function \u00b7 deleted", "path": "src/payments/legacy-charge.ts", "clickable": false, "changes": [{"what": "Removed.", "why": "PaymentPlanner replaces it."}]}, "cGF5bWVudHMubjc=": {"kind": "node", "status": "unchanged", "title": "src/payments/ledger.ts", "sub": "service \u00b7 unchanged", "path": "src/payments/ledger.ts", "clickable": false, "changes": []}};
+const ROOT   = "";
+let EDITOR = "system" || "system";
+try { EDITOR = localStorage.getItem("superreview.editor") || EDITOR; } catch (e) {}
+// Two levels, deliberately different palettes:
+//   FILE  — what happened to the file as a whole. Yellow is the umbrella colour
+//           for "this file changed", so it can never be mistaken for a whole new
+//           or whole deleted file.
+//   CHANGE — what happened to a line or a call inside it: content added (green),
+//           content modified (red), content removed (grey).
+const FILE   = {added:"#16A34A", modified:"#B45309", deleted:"#C0C0C0", unchanged:"#111827"};
+const CHANGE = {added:"#16A34A", modified:"#DC2626", deleted:"#C0C0C0", unchanged:"#111827"};
+const FILLS  = {added:"#DCFCE7", modified:"#FEF3C7", deleted:"#F2F2F2", unchanged:"transparent"};
+const CFILLS = {added:"#DCFCE7", modified:"#FEE2E2", deleted:"#F2F2F2", unchanged:"transparent"};
+let SHOWDIFF = false;
+try { SHOWDIFF = localStorage.getItem("superreview.diff") === "1"; } catch (e) {}
+
+// "← previous" is a sibling file on disk. Published as an artifact the page is
+// no longer next to it, so a relative link would be dead — drop it there. An
+// absolute "prev" (an earlier report's artifact URL) still works and stays.
+if (location.protocol !== "file:") {
+  const nav = document.querySelector("a.nav");
+  if (nav && !/^[a-z][a-z0-9+.-]*:/i.test(nav.getAttribute("href")))
+    nav.outerHTML = '<span class="nav off">no previous diagram</span>';
+}
+
+// A unified hunk, coloured the way a diff normally reads. Entries without one
+// simply show nothing, so a diagram built from a plan document is unaffected.
+function hunk(text) {
+  if (!text) return "";
+  let lines = String(text).split("\n");
+  const body = lines.filter(l => /^[+\- ]\s*\S/.test(l));
+  const indent = body.length
+    ? Math.min(...body.map(l => l.slice(1).match(/^\s*/)[0].length)) : 0;
+  if (indent) lines = lines.map(l => /^[+\- ]/.test(l) ? l[0] + l.slice(1 + indent) : l);
+  const rows = lines.map(l => {
+    const c = l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : l.startsWith("@@") ? "h" : "";
+    return `<span class="${c}">${esc(l)}</span>`;
+  }).join("\n");
+  return `<div class="hunk">${rows}</div>`;
+}
+
+const swatch = st => `<i class="sw" style="background:${CFILLS[st] || "transparent"};` +
+                     `border-color:${CHANGE[st] || "var(--muted)"}" title="${st}"></i>`;
+
+const stage = document.getElementById("stage");
+const svg   = stage.querySelector("svg");
+const hover = document.getElementById("hover");
+const pin   = document.getElementById("pin");
+
+/* ---------- editor links ---------- */
+// Every editor advertises its own URL scheme, so the page cannot know which one
+// this particular viewer uses — they pick it in the header and we remember it.
+// "system" falls back to file://, which respects the OS default app for the
+// extension but cannot jump to a line.
+const SCHEMES = {
+  vscode:   (abs, l) => "vscode://file" + abs + (l ? ":" + l : ""),
+  cursor:   (abs, l) => "cursor://file" + abs + (l ? ":" + l : ""),
+  zed:      (abs, l) => "zed://file" + abs + (l ? ":" + l : ""),
+  sublime:  (abs, l) => "subl://open?url=file://" + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  rider:    (abs, l) => "rider://open?file="    + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  idea:     (abs, l) => "idea://open?file="     + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  webstorm: (abs, l) => "webstorm://open?file=" + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  pycharm:  (abs, l) => "pycharm://open?file="  + encodeURIComponent(abs) + (l ? "&line=" + l : ""),
+  system:   (abs)    => "file://" + abs.split("/").map(encodeURIComponent).join("/"),
+};
+function fileURL(path, line) {
+  if (!ROOT || !path) return null;
+  const abs = ROOT.replace(/\/$/, "") + "/" + path;
+  return (SCHEMES[EDITOR] || SCHEMES.system)(abs, line);
+}
+
+/* ---------- viewport: pan + zoom on the svg viewBox (no libraries) ---------- */
+let base = svg.getAttribute("viewBox");
+if (!base) {
+  const w = parseFloat(svg.getAttribute("width")) || 1000;
+  const h = parseFloat(svg.getAttribute("height")) || 700;
+  base = `0 0 ${w} ${h}`;
+  svg.setAttribute("viewBox", base);
+}
+svg.removeAttribute("width"); svg.removeAttribute("height");
+svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+const HOME = base.split(/\s+/).map(Number);
+let view = HOME.slice();
+const setView = v => { view = v; svg.setAttribute("viewBox", v.join(" ")); };
+// Wheel, pinch and drag events can arrive several times per frame, and each
+// viewBox write redraws the whole diagram. Keep `view` current on every event
+// but write it to the svg at most once per frame.
+let frame = null;
+const queueView = v => {
+  view = v;
+  frame = frame || requestAnimationFrame(() => { frame = null; svg.setAttribute("viewBox", view.join(" ")); });
+};
+
+let anim = null;
+function animateTo(target, ms = 420) {
+  if (anim) cancelAnimationFrame(anim);
+  const from = view.slice(), t0 = performance.now();
+  const ease = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
+  (function step(now){
+    const k = Math.min(1, (now - t0) / ms), e = ease(k);
+    setView(from.map((f, i) => f + (target[i] - f) * e));
+    anim = k < 1 ? requestAnimationFrame(step) : null;
+  })(t0);
+}
+// getBBox() is in the units of d2's nested svg, which its padding shifts
+// against the outer svg the view works in; map the box across.
+function boxOf(g) {
+  const b = g.getBBox(), m = svg.getScreenCTM().inverse().multiply(g.getScreenCTM());
+  const p = new DOMPoint(b.x, b.y).matrixTransform(m);
+  const q = new DOMPoint(b.x + b.width, b.y + b.height).matrixTransform(m);
+  return {x: p.x, y: p.y, width: q.x - p.x, height: q.y - p.y};
+}
+// The pinned panel covers the right of the stage, so a box is framed in the
+// screen width left of it.
+const freeWidth = () => pin.classList.contains("on") ? pin.offsetLeft - 14 : stage.clientWidth;
+function zoomToBBox(bb, pad = 0.55, clamp = true) {
+  const W = stage.clientWidth, H = stage.clientHeight, fw = freeWidth();
+  let w = bb.width * (1 + pad), h = bb.height * (1 + pad);
+  if (w / h < fw / H) w = h * fw / H; else h = w * H / fw;
+  w *= W / fw;                                      // widen from the free area to the whole stage
+  // A single box is tiny next to the whole graph, so framing it exactly fills
+  // the screen with one node and loses all context. Never zoom closer than a
+  // third of the full view — enough to read the box and still see its arrows.
+  if (clamp) {
+    const minW = HOME[2] / 3, minH = HOME[3] / 3;
+    if (w < minW || h < minH) { const k = Math.max(minW / w, minH / h); w *= k; h *= k; }
+  }
+  animateTo([bb.x + bb.width/2 - w * fw / W / 2, bb.y + bb.height/2 - h/2, w, h]);
+}
+// Slide the box to the middle of the free area without changing the zoom. The
+// view's aspect can differ from the stage's, and "meet" then centres it with a
+// margin of ox screen pixels.
+function centreOn(bb) {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const s = Math.min(W / view[2], H / view[3]), ox = (W - view[2] * s) / 2;
+  animateTo([bb.x + bb.width/2 - (freeWidth()/2 - ox) / s, bb.y + bb.height/2 - view[3]/2, view[2], view[3]]);
+}
+// Once the reader has picked a zoom level, keep it and only bring the box to
+// the middle; Reset or Fit hand control back to the automatic framing.
+const frameBox = bb => userZoomed ? centreOn(bb) : zoomToBBox(bb);
+
+/* ---------- card rendering ---------- */
+function renderCard(d, live) {
+  // `live` = the pinned panel, which stays put and can hold real links; the
+  // hover card follows the cursor, so its links would be unreachable.
+  const url0 = live && d.clickable ? fileURL(d.path, (d.changes[0] || {}).line) : null;
+  const head = url0 ? `<a class="t" href="${url0}">${esc(d.title)}</a>` : `<div class="t">${esc(d.title)}</div>`;
+  const blocks = (d.changes || []).map(c => {
+    const u = live && d.clickable ? fileURL(c.path || d.path, c.line) : null;
+    const st = c.status || d.status;
+    const head2 = [swatch(st),
+                   c.call ? `<b>${esc(c.call)}</b>` : "",
+                   c.line ? (u ? `<a class="lno" href="${u}">:${c.line}</a>`
+                               : `<span class="lno">:${c.line}</span>`) : ""].filter(Boolean).join(" ");
+    return `<div class="chg">${head2}
+      <div class="what">${esc(c.what || c.details || "")}</div>
+      ${c.why ? `<div class="why">${esc(c.why)}</div>` : ""}
+      ${live && SHOWDIFF ? hunk(c.diff) : ""}</div>`;
+  }).join("");
+  const bar = (d.kind === "node" ? FILE : CHANGE)[d.status] || "var(--muted)";
+  return `<div class="bar" style="background:${bar}"></div>
+          ${head}<div class="s">${esc(d.sub || "")}</div>${blocks}
+          ${live ? "" : '<div class="pinhint">click to pin this panel — its links open the file, and diffs show there</div>'}`;
+}
+const esc = s => String(s == null ? "" : s)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+/* ---------- bind every d2 group whose base64 class is in DATA ---------- */
+let pinned = null, pinnedBox = null;
+const targets = [];
+svg.querySelectorAll("g[class]").forEach(g => {
+  for (const c of g.getAttribute("class").split(/\s+/)) {
+    if (DATA[c]) { g.classList.add("d2-hit"); g.dataset.key = c; targets.push(g); break; }
+  }
+});
+
+function moveHover(ev) {
+  const r = stage.getBoundingClientRect();
+  hover.style.left = Math.min(ev.clientX - r.left + 16, r.width  - hover.offsetWidth  - 10) + "px";
+  hover.style.top  = Math.min(ev.clientY - r.top  + 16, r.height - hover.offsetHeight - 10) + "px";
+}
+
+targets.forEach(g => {
+  const d = DATA[g.dataset.key];
+  g.addEventListener("mouseenter", e => { hover.innerHTML = renderCard(d, false); hover.classList.add("on"); moveHover(e); });
+  g.addEventListener("mousemove", moveHover);
+  g.addEventListener("mouseleave", () => hover.classList.remove("on"));
+  g.addEventListener("click", e => {
+    e.stopPropagation();
+    if (panned) { panned = false; return; }
+    if ((e.metaKey || e.ctrlKey) && d.clickable) {          // ⌘/Ctrl-click opens the change
+      const u = fileURL(d.path, (d.changes[0] || {}).line);
+      if (u) { location.href = u; return; }
+    }
+    targets.forEach(o => o.classList.toggle("dimmed", o !== g));
+    pinned = d; pinnedBox = boxOf(g);
+    pin.classList.toggle("wide", SHOWDIFF);
+    pin.querySelector(".body").innerHTML = renderCard(d, true);  // pinned copy has live links
+    pin.classList.add("on");
+    hover.classList.remove("on");
+    frameBox(pinnedBox);                             // after the panel is up, so its width is known
+  });
+});
+
+/* ---------- pan / wheel-zoom / reset ---------- */
+let drag = null, panned = false;
+stage.addEventListener("mousedown", e => {
+  if (pin.contains(e.target)) return;
+  drag = {x:e.clientX, y:e.clientY, v:view.slice()};
+  panned = false;
+  stage.classList.add("dragging"); hover.classList.remove("on");
+});
+addEventListener("mousemove", e => {
+  if (!drag) return;
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 4) panned = true;
+  const k = view[2] / stage.clientWidth;
+  queueView([drag.v[0] - (e.clientX - drag.x)*k, drag.v[1] - (e.clientY - drag.y)*k, view[2], view[3]]);
+});
+addEventListener("mouseup", () => { drag = null; stage.classList.remove("dragging"); });
+let userZoomed = false;
+function zoomAt(clientX, clientY, f) {
+  const r = stage.getBoundingClientRect();
+  const px = view[0] + (clientX - r.left)/r.width  * view[2];
+  const py = view[1] + (clientY - r.top )/r.height * view[3];
+  queueView([px - (px - view[0])*f, py - (py - view[1])*f, view[2]*f, view[3]*f]);
+  userZoomed = true;
+}
+// Scroll pans and pinch zooms, as in a map. The browser reports a trackpad pinch
+// as a wheel event with ctrlKey set (no key is actually held); ⌘/Ctrl + mouse
+// wheel takes the same path. Deltas arrive in pixels, lines or pages.
+const wheelPx = (d, e) => d * (e.deltaMode === 1 ? 25 : e.deltaMode === 2 ? stage.clientHeight : 1);
+stage.addEventListener("wheel", e => {
+  if (pin.contains(e.target)) return;                       // let the panel scroll itself
+  e.preventDefault();
+  if (anim) { cancelAnimationFrame(anim); anim = null; }
+  if (e.ctrlKey || e.metaKey) {
+    // Scaled by how far the fingers or wheel moved, not by how many events
+    // arrived. A pinch sends small deltas, so it gets 10× the gain (as in
+    // d3-zoom); the clamp stops one Ctrl + mouse-wheel notch jumping too far.
+    const z = wheelPx(e.deltaY, e) * (e.ctrlKey ? 0.02 : 0.002);
+    zoomAt(e.clientX, e.clientY, 2 ** Math.max(-0.3, Math.min(0.3, z)));
+  } else {
+    const k = view[2] / stage.clientWidth;
+    queueView([view[0] + wheelPx(e.deltaX, e)*k, view[1] + wheelPx(e.deltaY, e)*k, view[2], view[3]]);
+  }
+}, {passive:false});
+// Safari reports a pinch as gesture events with a running scale instead.
+let gestureScale = 1;
+stage.addEventListener("gesturestart", e => { e.preventDefault(); gestureScale = 1; });
+stage.addEventListener("gesturechange", e => {
+  e.preventDefault();
+  if (anim) { cancelAnimationFrame(anim); anim = null; }
+  zoomAt(e.clientX, e.clientY, gestureScale / e.scale);
+  gestureScale = e.scale;
+});
+
+// Once the reader has zoomed, only Reset view or Fit may move the zoom again:
+// closing the panel (empty-space click, ×, Esc) leaves the view where it is.
+function unpin() {
+  targets.forEach(o => o.classList.remove("dimmed"));
+  pinned = null;
+  pin.classList.remove("on"); hover.classList.remove("on");
+  if (!userZoomed) animateTo(HOME.slice());
+}
+function reset() { userZoomed = false; unpin(); }
+// A drag ends in a click on the stage; without this guard every pan snapped the
+// view back home the moment the mouse came up.
+stage.addEventListener("click", e => {
+  if (panned) { panned = false; return; }
+  if (!pin.contains(e.target)) unpin();
+});
+document.getElementById("reset").addEventListener("click", e => { e.stopPropagation(); reset(); });
+document.getElementById("fit").addEventListener("click", e => {
+  e.stopPropagation();
+  targets.forEach(o => o.classList.remove("dimmed"));
+  userZoomed = false;
+  zoomToBBox(svg.getBBox(), 0.08, false);
+});
+pin.querySelector(".close").addEventListener("click", e => { e.stopPropagation(); unpin(); });
+const diffBox = document.getElementById("diff");
+diffBox.checked = SHOWDIFF;
+diffBox.addEventListener("click", e => e.stopPropagation());
+diffBox.addEventListener("change", () => {
+  SHOWDIFF = diffBox.checked;
+  try { localStorage.setItem("superreview.diff", SHOWDIFF ? "1" : "0"); } catch (e) {}
+  pin.classList.toggle("wide", SHOWDIFF);
+  if (pinned) {
+    pin.querySelector(".body").innerHTML = renderCard(pinned, true);
+    frameBox(pinnedBox);                             // the panel changed width
+  }
+});
+
+const picker = document.getElementById("editor");
+picker.value = EDITOR;
+picker.addEventListener("click", e => e.stopPropagation());
+picker.addEventListener("change", () => {
+  EDITOR = picker.value;
+  try { localStorage.setItem("superreview.editor", EDITOR); } catch (e) {}
+  if (pinned) pin.querySelector(".body").innerHTML = renderCard(pinned, true);  // relink
+});
+
+addEventListener("keydown", e => { if (e.key === "Escape") unpin(); });
+</script>
+</body>
+</html>
