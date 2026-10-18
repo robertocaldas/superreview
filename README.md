@@ -8,6 +8,10 @@ that line in your editor. It diagrams your uncommitted work by default, or a com
 pull request, a whole repo, or the files a plan document proposes to touch.
 
 Ask for it in plain words: "diagram my changes", "show me what this PR touches".
+
+[![An example diagram: a checkout change that splits payments between a gift card and a card](https://raw.githubusercontent.com/robertocaldas/superreview/gh-pages/example.png)](https://robertocaldas.github.io/superreview/)
+
+**[Try the example](https://robertocaldas.github.io/superreview/)**: an invented change set you can hover, click and zoom.
 Pages are written to `docs/superreview/` in the repo, each linking back to the previous one.
 
 ## Why not UML?
