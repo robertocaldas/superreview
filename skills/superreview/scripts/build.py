@@ -282,6 +282,15 @@ def main():
                  "from (a plan document, or a commit / range / the working tree)")
     src_html = '<div class="src">%s</div>' % html.escape(source)
 
+    # A change without a hunk shows nothing under the diff checkbox. Arrows lose
+    # theirs most often, so name each one. A plan has no diff to show.
+    if not source.startswith("plan"):
+        for d in meta.values():
+            for c in d["changes"]:
+                if (c.get("line") and not c.get("diff")
+                        and (c.get("status") or d["status"]) != "unchanged"):
+                    warn("no diff on %s %s, line %s" % (d["kind"], d["title"], c["line"]))
+
     wrapper = open(os.path.join(HERE, "..", "assets", "wrapper.html")).read()
     out = (wrapper
            .replace("<!--{{TITLE}}-->", html.escape(graph.get("title", "Change diagram")))

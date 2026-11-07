@@ -63,12 +63,13 @@ Write it to a temp path (the scratchpad), not into the project.
     "parent": "src/core/host.cs",       // optional — draws this box inside that one
     "status": "added | modified | deleted | unchanged",
     "clickable": true,
-    "changes": [{ "line": 42, "what": "…", "why": "…" }]
+    "changes": [{ "line": 42, "what": "…", "why": "…", "diff": "@@ -40,3 +40,4 @@\n+…" }]
   }],
   "edges": [{
     "from": "src/core/a.cs", "to": "src/core/b.cs",
     "status": "added | modified | deleted | unchanged",
-    "changes": [{ "call": "Foo()", "line": 42, "path": "src/core/a.cs", "what": "…", "why": "…" }]
+    "changes": [{ "call": "Foo()", "line": 42, "path": "src/core/a.cs", "what": "…", "why": "…",
+                  "diff": "@@ -40,3 +40,4 @@\n+    b.Foo();" }]
   }]
 }
 ```
@@ -199,13 +200,20 @@ Keep each one **concise** — one line of *what*, one of *why*:
   the position of the hunk, not of the line you are describing.
 - `path` — optional; defaults to the element's own path. Set it only to point at
   a *different* file, and then the `line` must be a line in *that* file.
-- `diff` — optional: the unified hunk for this change, as plain text with its
+- `diff` — the unified hunk for this change, as plain text with its
   `@@` header and `+`/`-` prefixes. The page has a **diff** checkbox that reveals
   it inside the card, which is as close as a browser can get to an IDE's diff
   view — no editor exposes one over a URL scheme. Keep each hunk to the few lines
   that matter (`git diff -U2` on that file, then take the relevant hunk); a whole
-  file pasted in makes the card unreadable. Omit it where there is nothing to
-  show, such as binaries or a diagram built from a plan.
+  file pasted in makes the card unreadable. Give one to every change, on boxes
+  and on arrows. Omit it only where there is nothing to show: binaries, a change
+  with the status `unchanged`, or a diagram built from a plan. `build.py` prints
+  a warning for each other change that has a `line` and no `diff`.
+
+  On an arrow, the hunk shows the call site. That is the lines in the calling
+  file that add, change or remove the call. The calling file is `path` when you
+  set it, and `from` when you do not. The lines inside the called method go on
+  the box of the called file.
 
   The hunk has to show **the lines the entry is actually about** — after writing
   it, read it back and check the symbols named in `what` appear in it. Slicing
