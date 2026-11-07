@@ -31,6 +31,12 @@ EDGE_STYLE = {
     "deleted":   "#C0C0C0",
     "unchanged": "#111827",
 }
+# status -> the word the legend uses, so a card never names a status in words
+# the legend does not show
+FILE_WORD = {"added": "new", "modified": "changed",
+             "deleted": "removed", "unchanged": "untouched"}
+CHANGE_WORD = {"added": "added", "modified": "modified",
+               "deleted": "removed", "unchanged": "unchanged"}
 
 
 def b64(s):
@@ -225,7 +231,7 @@ def emit_d2(graph):
         meta[b64(key)] = {
             "kind": "edge", "status": status,
             "title": "%s  →  %s" % (src.split("/")[-1], dst.split("/")[-1]),
-            "sub": "%d change%s · %s" % (calls, "" if calls == 1 else "s", status),
+            "sub": "%d change%s · %s" % (calls, "" if calls == 1 else "s", CHANGE_WORD[status]),
             "path": src, "clickable": bool(graph.get("root")),
             "changes": changes,
         }
@@ -235,7 +241,7 @@ def emit_d2(graph):
         meta[b64(paths[n["id"]])] = {
             "kind": "node", "status": n.get("status", "unchanged"),
             "title": n["id"],
-            "sub": " · ".join(filter(None, [n.get("kind"), n.get("status")])),
+            "sub": " · ".join(filter(None, [n.get("kind"), FILE_WORD.get(n.get("status"))])),
             "path": n["id"],
             "clickable": bool(graph.get("root")) and n.get("clickable", True),
             "changes": ch,
