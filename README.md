@@ -7,6 +7,9 @@ removed. Hovering explains what changed and why; clicking pins the details, wher
 that line in your editor. It diagrams your uncommitted work by default, or a commit range, a branch, a
 pull request, a whole repo, or the files a plan document proposes to touch.
 
+Story mode takes you through the changes one step at a time, in the order that the AI chose to explain
+them. Each step opens one box or arrow, with a short note that tells you why it comes next.
+
 Ask for it in plain words: "diagram my changes", "show me what this PR touches".
 
 [![An example diagram: a checkout change that splits payments between a gift card and a card](https://raw.githubusercontent.com/robertocaldas/superreview/gh-pages/example.png)](https://robertocaldas.github.io/superreview/)
@@ -49,6 +52,7 @@ claude plugin install superreview --marketplace robertocaldas/claude-plugins
 | Click | Pin the details; links open the file at that line |
 | Drag or scroll | Pan |
 | Pinch or ⌘-scroll | Zoom; once you zoom, only Reset view and Fit change it again |
+| → and ←, or ‹ › | Story mode: the next or the previous step |
 | Esc | Close the details |
 
 The **diff** checkbox shows each change's hunk in the pinned panel, and **open in** picks your editor.

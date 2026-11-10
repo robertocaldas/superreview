@@ -70,7 +70,12 @@ Write it to a temp path (the scratchpad), not into the project.
     "status": "added | modified | deleted | unchanged",
     "changes": [{ "call": "Foo()", "line": 42, "path": "src/core/a.cs", "what": "…", "why": "…",
                   "diff": "@@ -40,3 +40,4 @@\n+    b.Foo();" }]
-  }]
+  }],
+  "tour": [                              // the story through the changes, see "The tour"
+    { "note": "…" },
+    { "node": "src/core/thing.cs", "show": [0], "note": "…" },
+    { "from": "src/core/a.cs", "to": "src/core/b.cs", "note": "…" }
+  ]
 }
 ```
 
@@ -256,6 +261,46 @@ can scan the card against the file without hunting.
 Do not rank by importance. "Most significant first" reads as a summary and buries
 whatever context the rest needed to make sense.
 
+### The tour: the changes as a story
+
+`tour` is the order in which the page takes the reader through the change set, one
+step at a time. The reader presses → and ←, or the ‹ › buttons, to move. Each step
+pins one box or one arrow, as a click does, and its card opens with your note on top.
+Write a tour for every diagram that has more than one changed box or arrow.
+
+- `node` names a box by its `id`.
+- `from` and `to` name an arrow. Add `status` only when two arrows join the same pair.
+- `show` lists the positions, counted from 0, in the `changes` of that box or arrow
+  that the step shows, in the order given. Leave it out to show all of them. For an
+  arrow, the positions count across all `edges` entries with the same `from`, `to`
+  and `status`, in the order they appear.
+- `note` is one sentence: why this step comes now, or what to look for in it. Do not
+  repeat the `what` and `why` of the change, because the card shows them under the
+  note.
+- A step with no `node` and no `from` is a note over the whole diagram. Use one to
+  open the tour, and one where the story changes subject.
+
+The reader is a reviewer who sees the change set for the first time. Tell the story
+in this order:
+
+1. Open with a step that has only a note. Say what the change set does for the
+   people who use the software, in one or two sentences.
+2. Show the new types, contracts, fields and configuration that the rest of the
+   code depends on. A definition comes before its first use.
+3. Follow the call path in the order a request, an event or a frame travels it.
+   Start at the entry point where the behavior starts. Put each arrow after the box
+   that makes the call and before the box that receives it.
+4. End with removals, wiring and tests. The reader understands them only after they
+   know what replaced the old code, or what the tests protect.
+
+If the changes of one box belong to different points in the story, split the box
+across steps with `show`. For example, show a new field at step 2 and the code that
+reads it at step 6. Every change with a status other than `unchanged` must be in at
+least one step, and `build.py` warns about each change that the tour does not show.
+A box or an arrow with the status `unchanged` gets a step only when the story goes
+through it. When a step shows all the changes of a box, the order in "Ordering the
+changes" above still applies.
+
 ## 4. Build
 
 ```bash
@@ -265,7 +310,8 @@ python3 <skill>/scripts/build.py <graph.json> \
 ```
 
 `build.py` warns on stderr when an element gets no hover target, when a `parent`
-does not name a node, and when a nested node's `group` is discarded. Fix those
+does not name a node, when a nested node's `group` is discarded, and when a tour
+step names nothing or the tour skips a change. Fix those
 before handing the page over — an unbound element is dead on the page.
 
 `root` is the only machine-specific value in the JSON — it is the absolute path
@@ -293,14 +339,15 @@ that has not changed. Rephrasing a stable explanation each run is noise: it
 makes the two pages look different when the code is not, and it costs the
 reader the ability to spot what actually moved by comparing them. Write new
 prose only for what is genuinely new or different, and let `source` show which
-revision each page covers.
+revision each page covers. The same applies to the tour: keep the order and the
+`note` of each step that still covers the same changes.
 
 ## 6. Report
 
 Give the user the path, and one line on what the diagram shows. The HTML is
 self-contained: hover for detail, click to zoom and pin, click a link in the
 pinned panel to open that line, drag or scroll to pan, pinch or ⌘-scroll to
-zoom, Esc to close.
+zoom, Esc to close, → and ← to walk the tour.
 
 If the page was not published, end with one line offering to publish it.
 

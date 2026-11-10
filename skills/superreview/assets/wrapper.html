@@ -75,6 +75,10 @@
   #pin .card, #pin.card{max-width:none}
   .card .pinhint{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);
     font-size:11px;color:var(--muted)}
+  .card .step{margin-bottom:10px;padding:0 18px 9px 0;border-bottom:1px solid var(--line)}
+  .card .step:last-child{margin-bottom:0;padding-bottom:0;border-bottom:0}
+  .card .step .n{font-size:10.5px;font-weight:650;color:var(--link);text-transform:uppercase;letter-spacing:.05em}
+  .card .step .note{margin-top:3px;font-size:13px}
 
   #hover{position:absolute;pointer-events:none;opacity:0;transform:translateY(4px);
     transition:opacity .12s,transform .12s;z-index:5}
@@ -90,6 +94,11 @@
   button.b{font:inherit;font-size:12px;padding:5px 11px;border-radius:7px;cursor:pointer;
     border:1px solid var(--line);background:var(--card-bg);color:var(--fg)}
   button.b:hover{border-color:var(--muted)}
+  button.b:disabled{opacity:.4;cursor:default}
+  button.b:disabled:hover{border-color:var(--line)}
+  #tour{display:flex;align-items:center;gap:6px;margin-left:10px}
+  #tour[hidden]{display:none}
+  #tourpos{font-size:12px;color:var(--muted);min-width:56px;text-align:center;font-variant-numeric:tabular-nums}
   .hint{position:absolute;left:14px;bottom:44px;font-size:11.5px;color:var(--muted);z-index:4}
 </style>
 </head>
@@ -134,12 +143,18 @@
   <footer>
     <button class="b" id="reset">Reset view</button>
     <button class="b" id="fit">Fit</button>
+    <div id="tour" hidden>
+      <button class="b" id="prev" title="previous step (←)">‹</button>
+      <span id="tourpos"></span>
+      <button class="b" id="next" title="next step (→)">›</button>
+    </div>
   </footer>
-  <div class="hint">hover for detail · click to zoom &amp; pin · click a link in the panel to open the file · drag or scroll to pan · pinch or ⌘-scroll to zoom · Esc to close</div>
+  <div class="hint">hover for detail · click to zoom &amp; pin · click a link in the panel to open the file · drag or scroll to pan · pinch or ⌘-scroll to zoom · Esc to close<span id="tourhint" hidden> · → and ← walk through the changes</span></div>
 </div>
 
 <script>
 const DATA   = /*{{DATA}}*/;
+const TOUR   = /*{{TOUR}}*/;
 const ROOT   = /*{{ROOT}}*/;
 let EDITOR = /*{{EDITOR}}*/ || "system";
 try { EDITOR = localStorage.getItem("superreview.editor") || EDITOR; } catch (e) {}
@@ -282,12 +297,23 @@ function centreOn(bb) {
 const frameBox = bb => userZoomed ? centreOn(bb) : zoomToBBox(bb);
 
 /* ---------- card rendering ---------- */
-function renderCard(d, live) {
+// The top of a tour step's card: where the reader is, and the author's note on
+// why this step comes now.
+const stepHead = (step, more = "") =>
+  `<div class="step"><div class="n">step ${step.n} of ${TOUR.length}${more}</div>` +
+  (step.note ? `<div class="note">${esc(step.note)}</div>` : "") + `</div>`;
+
+function renderCard(d, live, step) {
   // `live` = the pinned panel, which stays put and can hold real links; the
   // hover card follows the cursor, so its links would be unreachable.
-  const url0 = live && d.clickable ? fileURL(d.path, (d.changes[0] || {}).line) : null;
+  // `step` = a tour step, which leads with its note and shows only its changes.
+  const all = d.changes || [];
+  const list = step && step.show ? step.show.map(i => all[i]) : all;
+  const more = list.length < all.length
+    ? ` · ${list.length} of ${all.length} changes ${d.kind === "node" ? "in this file" : "on this arrow"}` : "";
+  const url0 = live && d.clickable ? fileURL(d.path, (list[0] || {}).line) : null;
   const head = url0 ? `<a class="t" href="${url0}">${esc(d.title)}</a>` : `<div class="t">${esc(d.title)}</div>`;
-  const blocks = (d.changes || []).map(c => {
+  const blocks = list.map(c => {
     const u = live && d.clickable ? fileURL(c.path || d.path, c.line) : null;
     const st = c.status || d.status;
     const head2 = [swatch(st),
@@ -300,7 +326,7 @@ function renderCard(d, live) {
       ${live && SHOWDIFF ? hunk(c.diff) : ""}</div>`;
   }).join("");
   const bar = (d.kind === "node" ? FILE : CHANGE)[d.status] || "var(--muted)";
-  return `<div class="bar" style="background:${bar}"></div>
+  return `${step ? stepHead(step, more) : ""}<div class="bar" style="background:${bar}"></div>
           ${head}<div class="s">${esc(d.sub || "")}</div>${blocks}
           ${live ? "" : '<div class="pinhint">click to pin this panel — its links open the file, and diffs show there</div>'}`;
 }
@@ -308,7 +334,7 @@ const esc = s => String(s == null ? "" : s)
   .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
 /* ---------- bind every d2 group whose base64 class is in DATA ---------- */
-let pinned = null, pinnedBox = null;
+let pinned = null, pinnedBox = null, pinnedStep = null;
 const targets = [];
 svg.querySelectorAll("g[class]").forEach(g => {
   for (const c of g.getAttribute("class").split(/\s+/)) {
@@ -320,6 +346,20 @@ function moveHover(ev) {
   const r = stage.getBoundingClientRect();
   hover.style.left = Math.min(ev.clientX - r.left + 16, r.width  - hover.offsetWidth  - 10) + "px";
   hover.style.top  = Math.min(ev.clientY - r.top  + 16, r.height - hover.offsetHeight - 10) + "px";
+}
+
+// Pin an element's card, dim everything else and frame it. A click and a tour
+// step both come here; only the step passes itself, to lead the card.
+function pinTarget(g, step = null) {
+  const d = DATA[g.dataset.key];
+  targets.forEach(o => o.classList.toggle("dimmed", o !== g));
+  pinned = d; pinnedStep = step; pinnedBox = boxOf(g);
+  pin.classList.toggle("wide", SHOWDIFF);
+  pin.querySelector(".body").innerHTML = renderCard(d, true, step);  // pinned copy has live links
+  pin.scrollTop = 0;
+  pin.classList.add("on");
+  hover.classList.remove("on");
+  frameBox(pinnedBox);                               // after the panel is up, so its width is known
 }
 
 targets.forEach(g => {
@@ -334,13 +374,7 @@ targets.forEach(g => {
       const u = fileURL(d.path, (d.changes[0] || {}).line);
       if (u) { location.href = u; return; }
     }
-    targets.forEach(o => o.classList.toggle("dimmed", o !== g));
-    pinned = d; pinnedBox = boxOf(g);
-    pin.classList.toggle("wide", SHOWDIFF);
-    pin.querySelector(".body").innerHTML = renderCard(d, true);  // pinned copy has live links
-    pin.classList.add("on");
-    hover.classList.remove("on");
-    frameBox(pinnedBox);                             // after the panel is up, so its width is known
+    pinTarget(g);
   });
 });
 
@@ -400,7 +434,7 @@ stage.addEventListener("gesturechange", e => {
 // closing the panel (empty-space click, ×, Esc) leaves the view where it is.
 function unpin() {
   targets.forEach(o => o.classList.remove("dimmed"));
-  pinned = null;
+  pinned = null; pinnedStep = null;
   pin.classList.remove("on"); hover.classList.remove("on");
   if (!userZoomed) animateTo(HOME.slice());
 }
@@ -425,9 +459,9 @@ diffBox.addEventListener("click", e => e.stopPropagation());
 diffBox.addEventListener("change", () => {
   SHOWDIFF = diffBox.checked;
   try { localStorage.setItem("superreview.diff", SHOWDIFF ? "1" : "0"); } catch (e) {}
-  pin.classList.toggle("wide", SHOWDIFF);
+  pin.classList.toggle("wide", SHOWDIFF && !!pinned);  // a note-only step has no diff to widen for
   if (pinned) {
-    pin.querySelector(".body").innerHTML = renderCard(pinned, true);
+    pin.querySelector(".body").innerHTML = renderCard(pinned, true, pinnedStep);
     frameBox(pinnedBox);                             // the panel changed width
   }
 });
@@ -438,10 +472,53 @@ picker.addEventListener("click", e => e.stopPropagation());
 picker.addEventListener("change", () => {
   EDITOR = picker.value;
   try { localStorage.setItem("superreview.editor", EDITOR); } catch (e) {}
-  if (pinned) pin.querySelector(".body").innerHTML = renderCard(pinned, true);  // relink
+  if (pinned) pin.querySelector(".body").innerHTML = renderCard(pinned, true, pinnedStep);  // relink
 });
 
-addEventListener("keydown", e => { if (e.key === "Escape") unpin(); });
+/* ---------- tour: the changes in the order the author chose to tell them ---------- */
+// Each step pins one box or arrow, exactly as a click does. A step with no
+// element is a note over the whole diagram: an opening, or a change of subject.
+// Clicking elsewhere or Esc leaves the position alone, so → carries on from it.
+let at = 0;                                          // 0 = not started, else 1..TOUR.length
+const tourPos = document.getElementById("tourpos");
+const prevBtn = document.getElementById("prev"), nextBtn = document.getElementById("next");
+function tourUI() {
+  tourPos.textContent = at ? `${at} / ${TOUR.length}` : `tour · ${TOUR.length}`;
+  prevBtn.disabled = at <= 1;
+  nextBtn.disabled = at >= TOUR.length;
+}
+function go(i) {
+  at = Math.max(1, Math.min(TOUR.length, i));
+  const step = Object.assign({n: at}, TOUR[at - 1]);
+  const g = step.key && targets.find(t => t.dataset.key === step.key);
+  if (g) pinTarget(g, step);
+  else {
+    targets.forEach(o => o.classList.remove("dimmed"));
+    pinned = null; pinnedStep = step;
+    pin.classList.remove("wide");
+    pin.querySelector(".body").innerHTML = stepHead(step);
+    pin.scrollTop = 0;
+    pin.classList.add("on"); hover.classList.remove("on");
+    if (!userZoomed) animateTo(HOME.slice());
+  }
+  tourUI();
+}
+if (TOUR.length) {
+  document.getElementById("tour").hidden = false;
+  document.getElementById("tourhint").hidden = false;
+  tourUI();
+  prevBtn.addEventListener("click", e => { e.stopPropagation(); go(at - 1); });
+  nextBtn.addEventListener("click", e => { e.stopPropagation(); go(at + 1); });
+}
+
+addEventListener("keydown", e => {
+  if (e.key === "Escape") unpin();
+  // Arrow keys belong to a focused text field or select; ⌘/Alt-arrows to the browser.
+  if (!TOUR.length || e.metaKey || e.ctrlKey || e.altKey
+      || (e.target.closest && e.target.closest("select, textarea, input:not([type=checkbox])"))) return;
+  if (e.key === "ArrowRight" && at < TOUR.length) { e.preventDefault(); go(at + 1); }
+  if (e.key === "ArrowLeft"  && at > 1)           { e.preventDefault(); go(at - 1); }
+});
 </script>
 </body>
 </html>

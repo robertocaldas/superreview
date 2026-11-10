@@ -198,7 +198,9 @@ def emit_d2(graph):
         b = buckets.setdefault(key, [])
         b += e.get("changes") or [{"call": e.get("label", ""), "what": e.get("details", "")}]
 
-    seen, meta = {}, {}
+    # keys: a node id, or an arrow's (from, to, status), -> its hover target,
+    # so the tour can name what it shows the way graph.json does
+    seen, meta, keys = {}, {}, {}
     for (src, dst, status), changes in buckets.items():
         sp, dp = paths[src], paths[dst]
         idx = seen.get((sp, dp), 0)
@@ -228,6 +230,7 @@ def emit_d2(graph):
             key = "%s.(%s -&gt; %s)[%d]" % (pre, sp[len(pre) + 1:], dp[len(pre) + 1:], idx)
         else:
             key = "(%s -&gt; %s)[%d]" % (sp, dp, idx)
+        keys[(src, dst, status)] = b64(key)
         meta[b64(key)] = {
             "kind": "edge", "status": status,
             "title": "%s  →  %s" % (src.split("/")[-1], dst.split("/")[-1]),
@@ -238,6 +241,7 @@ def emit_d2(graph):
 
     for n in nodes:
         ch = n.get("changes") or ([{"what": n["details"]}] if n.get("details") else [])
+        keys[n["id"]] = b64(paths[n["id"]])
         meta[b64(paths[n["id"]])] = {
             "kind": "node", "status": n.get("status", "unchanged"),
             "title": n["id"],
@@ -246,14 +250,75 @@ def emit_d2(graph):
             "clickable": bool(graph.get("root")) and n.get("clickable", True),
             "changes": ch,
         }
-    return "\n".join(lines) + "\n", meta
+    return "\n".join(lines) + "\n", meta, keys
+
+
+def emit_tour(graph, meta, keys):
+    """Resolve each tour step to the hover target it pins.
+
+    A step names a box by `node`, an arrow by `from`/`to` (plus `status` when
+    two arrows join the same pair), or nothing, for a note over the whole
+    diagram. `show` picks which of that element's changes the step shows.
+    """
+    steps = []
+    for i, s in enumerate(graph.get("tour") or [], 1):
+        where = "tour step %d" % i
+        if not s.get("note"):
+            warn("%s has no note" % where)
+        key = None
+        if "node" in s:
+            key = keys.get(s["node"])
+            if key is None:
+                warn("%s: %r is not a node — step dropped" % (where, s["node"]))
+                continue
+        elif "from" in s or "to" in s:
+            hits = [k for k in keys if isinstance(k, tuple)
+                    and k[:2] == (s.get("from"), s.get("to"))
+                    and s.get("status") in (None, k[2])]
+            if len(hits) != 1:
+                warn("%s: %s arrow %s -> %s%s — step dropped"
+                     % (where, "no" if not hits else "more than one", s.get("from"), s.get("to"),
+                        ", set its status" if hits else ""))
+                continue
+            key = keys[hits[0]]
+        show = s.get("show")
+        if show is not None:
+            n = len(meta[key]["changes"]) if key else 0
+            ok = [x for x in show if isinstance(x, int) and 0 <= x < n]
+            if len(ok) != len(show):
+                warn("%s: show %s has positions that are not in its changes (0..%d) — ignored"
+                     % (where, show, n - 1))
+            show = ok or None                          # nothing valid left: show them all
+        steps.append({"key": key, "show": show, "note": s.get("note", "")})
+
+    # The tour is the reader's path through the review, so a change it never
+    # reaches is one they never see. Context (status unchanged) needs no step.
+    shown, changed = {}, 0
+    for st in steps:
+        if st["key"]:
+            n = len(meta[st["key"]]["changes"])
+            shown.setdefault(st["key"], set()).update(
+                st["show"] if st["show"] is not None else range(n))
+    for key, d in meta.items():
+        todo = [j for j, c in enumerate(d["changes"])
+                if (c.get("status") or d["status"]) != "unchanged"]
+        changed += bool(todo)
+        for j in todo if steps else []:
+            if j not in shown.get(key, ()):
+                warn("the tour never shows %s %s, change %d: %s"
+                     % (d["kind"], d["title"], j, (d["changes"][j].get("what") or "")[:60]))
+    if not steps and changed > 1:
+        warn("no tour — %d boxes and arrows have changes; add \"tour\" to tell their story"
+             % changed)
+    return steps
 
 
 def main():
     src = sys.argv[1]
     dst = sys.argv[2]
     graph = json.load(open(src))
-    d2_text, meta = emit_d2(graph)
+    d2_text, meta, keys = emit_d2(graph)
+    tour = emit_tour(graph, meta, keys)
 
     tmp = tempfile.mkdtemp()
     d2f, svgf = os.path.join(tmp, "d.d2"), os.path.join(tmp, "d.svg")
@@ -306,6 +371,7 @@ def main():
            .replace("/*{{ROOT}}*/", json.dumps(graph.get("root", "")))
            .replace("/*{{EDITOR}}*/", json.dumps(graph.get("editor", "system")))
            .replace("/*{{DATA}}*/", json.dumps(meta))
+           .replace("/*{{TOUR}}*/", json.dumps(tour))
            .replace("<!--{{SVG}}-->", svg))
     os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
     open(dst, "w").write(out)
